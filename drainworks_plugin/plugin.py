@@ -33,5 +33,31 @@ class DrainworksPlugin:
         self.actions = []
 
     def on_import(self):
-        """Placeholder hook, replaced in Task 3."""
-        self.iface.messageBar().pushInfo("Drainworks", "Import action (not wired yet).")
+        """Open the import dialog and import the selected file."""
+        from qgis.PyQt.QtWidgets import QDialog
+
+        from drainworks_plugin.io.import_controller import (
+            import_ribx,
+            load_geopackage_layers,
+        )
+        from drainworks_plugin.ui.import_dialog import ImportDialog
+
+        dialog = ImportDialog(self.iface.mainWindow())
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        input_path, gpkg_path = dialog.values()
+        if not input_path:
+            return
+        try:
+            if input_path.lower().endswith(".gpkg"):
+                manhole_layer, pipe_layer = load_geopackage_layers(input_path)
+            else:
+                manhole_layer, pipe_layer = import_ribx(input_path, gpkg_path)
+        except Exception as exc:  # surface to the user, don't crash QGIS
+            self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
+            return
+        self.iface.messageBar().pushSuccess(
+            "Drainworks",
+            f"Imported {pipe_layer.featureCount()} pipes, "
+            f"{manhole_layer.featureCount()} manholes.",
+        )
