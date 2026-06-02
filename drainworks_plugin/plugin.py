@@ -36,6 +36,12 @@ class DrainworksPlugin:
         self.iface.addPluginToMenu(self.menu, traj)
         self.actions.append(traj)
 
+        loss = QAction(icon, "Compute lost capacity", self.iface.mainWindow())
+        loss.triggered.connect(self.on_compute_loss)
+        self.iface.addToolBarIcon(loss)
+        self.iface.addPluginToMenu(self.menu, loss)
+        self.actions.append(loss)
+
     def unload(self):
         """Remove actions. Called by QGIS on plugin unload."""
         for action in self.actions:
@@ -102,3 +108,25 @@ class DrainworksPlugin:
         self.iface.messageBar().pushInfo(
             "Drainworks", "Click manholes to build a route. Right-click to reset."
         )
+
+    def on_compute_loss(self):
+        """Compute lost capacity and load the styled measurements layer."""
+        if self.gpkg_path is None:
+            self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
+            return
+        from qgis.core import QgsProject, QgsVectorLayer
+
+        from drainworks_plugin.lostcapacity.runner import compute_and_store
+        from drainworks_plugin.styling.symbology import style_measurements_by_flooded
+
+        try:
+            n = compute_and_store(self.gpkg_path)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Drainworks", f"Computation failed: {exc}")
+            return
+
+        layer = QgsVectorLayer(f"{self.gpkg_path}|layername=measurements", "Verloren berging", "ogr")
+        if layer.isValid():
+            QgsProject.instance().addMapLayer(layer)
+            style_measurements_by_flooded(layer)
+        self.iface.messageBar().pushSuccess("Drainworks", f"Lost capacity computed for {n} points.")
