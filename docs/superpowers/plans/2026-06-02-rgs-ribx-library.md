@@ -614,25 +614,22 @@ def gml_pos_to_wkt_point(pos: str | None) -> str | None:
 
 
 def gml_poslist_to_wkt_linestring(poslist: str | None) -> str | None:
-    """Convert a GML ``posList`` string to a WKT LINESTRING, or None if empty."""
+    """Convert a GML ``posList`` string to a WKT LINESTRING, or None if empty.
+
+    RIBX-NL posLists are 2D (``x y`` pairs). We require an even coordinate
+    count of at least 4 (i.e. >= 2 vertices); anything else is malformed.
+    """
     if not poslist:
         return None
     coords = [float(p) for p in poslist.split()]
-    # We accept 2D (x y) pairs. If a Z is present per vertex the count is a
-    # multiple of 3; detect and strip. Otherwise it must be a multiple of 2.
-    if len(coords) % 2 == 0 and len(coords) % 3 != 0:
-        stride = 2
-    elif len(coords) % 3 == 0 and len(coords) % 2 != 0:
-        stride = 3
-    elif len(coords) % 2 == 0:
-        stride = 2  # ambiguous (e.g. 6 values) -> assume 2D pairs
-    else:
-        raise ValueError(f"Coordinate count not divisible into vertices: {poslist!r}")
-
+    if len(coords) % 2 != 0 or len(coords) < 4:
+        raise ValueError(
+            f"LINESTRING needs an even count of >= 4 coordinates "
+            f"(>= 2 vertices), got: {poslist!r}"
+        )
     vertices = []
-    for i in range(0, len(coords), stride):
-        x, y = coords[i], coords[i + 1]
-        vertices.append(f"{_fmt(x)} {_fmt(y)}")
+    for i in range(0, len(coords), 2):
+        vertices.append(f"{_fmt(coords[i])} {_fmt(coords[i + 1])}")
     return "LINESTRING (" + ", ".join(vertices) + ")"
 ```
 

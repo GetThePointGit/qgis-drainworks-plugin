@@ -14,7 +14,7 @@
 
 > **IMPORTANT — git workflow (user's global rule):** Never commit on `main`. Work happens on a feature branch (e.g. `feature/qgis-plugin`). Never `git push` unless explicitly told.
 
-> **Dependency note:** QGIS bundles `lxml`, `pandas`, `osgeo`. It usually bundles `pyqtgraph`; if `import pyqtgraph` fails in the QGIS Python console, install it into the QGIS Python (`<QGIS>/bin/python -m pip install pyqtgraph`) or vendor it under `drainworks_plugin/_vendor/`. `rgs-ribx` is installed with `pip install -e ~/Documents/GitHub/rgs-ribx` into the same QGIS Python. Task 1 verifies both imports.
+> **Dependency note (verified in this environment):** The target interpreter is **`/Applications/QGIS-LTR2.app/Contents/MacOS/bin/python3`** (Python 3.9.5, x86_64). It already has `lxml 4.5.2`, `pandas 1.3.3`, `numpy 1.20.1`, `osgeo`, `qgis.core`, `PyQt5`, and `pyqtgraph` — do **NOT** `pip install` anything into this bundle (a prior `pip install` upgraded numpy/pandas and had to be reverted; the library's dependency floors were lowered to match). `rgs_ribx` is made importable **without installing** via a tiny `sys.path` bootstrap in `drainworks_plugin/__init__.py` (Task 0) for runtime, and via `PYTHONPATH` for headless tests (Task 1). When running the QGIS Python from a shell, also export `PROJ_LIB`, `PROJ_DATA`, and `GDAL_DATA` (see Task 1) or OGR cannot resolve EPSG codes.
 
 ---
 
@@ -118,8 +118,39 @@ icon=resources/icon.svg
 
 - [ ] **Step 4: Create `drainworks_plugin/__init__.py`**
 
+Includes a `sys.path` bootstrap so the plugin finds `rgs_ribx` from a sibling checkout without installing it into the QGIS Python (which must not be modified).
+
 ```python
 """Drainworks QGIS plugin entry point."""
+
+import os
+import sys
+
+
+def _ensure_rgs_ribx_on_path():
+    """Make ``rgs_ribx`` importable without installing it into QGIS's Python.
+
+    Tries a normal import first; if that fails, falls back to a sibling
+    ``rgs-ribx`` checkout's ``src`` directory. Adjust the fallback path if your
+    checkout lives elsewhere.
+    """
+    try:
+        import rgs_ribx  # noqa: F401
+        return
+    except ImportError:
+        pass
+    candidates = [
+        os.path.expanduser("~/Documents/GitHub/rgs-ribx/src"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "rgs-ribx", "src"),
+    ]
+    for candidate in candidates:
+        candidate = os.path.abspath(candidate)
+        if os.path.isdir(candidate) and candidate not in sys.path:
+            sys.path.insert(0, candidate)
+            return
+
+
+_ensure_rgs_ribx_on_path()
 
 
 def classFactory(iface):  # noqa: N802 (QGIS-required name)
@@ -257,20 +288,23 @@ def test_pyqtgraph_importable():
     import pyqtgraph  # noqa: F401
 ```
 
-- [ ] **Step 4: Run the tests under the QGIS Python**
+- [ ] **Step 4: Run the tests under the QGIS Python (no installs)**
 
-The QGIS Python must see `rgs_ribx`, `osgeo`, and `pyqtgraph`. Use the QGIS Python interpreter (macOS path shown; adjust to your install):
+Use the QGIS-LTR2 Python; make `rgs_ribx` visible with `PYTHONPATH` and set the PROJ/GDAL data dirs so OGR can resolve EPSG codes. Define this canonical command once and reuse it for every later `pytest` step:
 
 ```bash
-QGIS_PY="/Applications/QGIS.app/Contents/MacOS/bin/python3"
-"$QGIS_PY" -m pip install -e ~/Documents/GitHub/rgs-ribx
-"$QGIS_PY" -m pip install pytest pyqtgraph
+export QGIS_PY="/Applications/QGIS-LTR2.app/Contents/MacOS/bin/python3"
+export PROJ_LIB="/Applications/QGIS-LTR2.app/Contents/Resources/proj"
+export PROJ_DATA="$PROJ_LIB"
+export GDAL_DATA="/Applications/QGIS-LTR2.app/Contents/Resources/gdal"
+export PYTHONPATH="$HOME/Documents/GitHub/qgis-drainworks-plugin:$HOME/Documents/GitHub/rgs-ribx/src"
+
 cd ~/Documents/GitHub/qgis-drainworks-plugin
 "$QGIS_PY" -m pytest tests/test_dependencies.py -v
 ```
-Expected: PASS (3 passed). If `pyqtgraph` import fails, install it into the QGIS Python as shown, or vendor it; then re-run.
+Expected: PASS (3 passed). Do NOT `pip install` anything into the QGIS bundle — `rgs_ribx` resolves via `PYTHONPATH`, and `osgeo`/`pyqtgraph`/`pandas`/`lxml` are already present.
 
-> Record the working `QGIS_PY` path — every later `pytest` step uses it.
+> Every later `pytest` step assumes these five env vars are exported in the shell.
 
 - [ ] **Step 5: Commit**
 
