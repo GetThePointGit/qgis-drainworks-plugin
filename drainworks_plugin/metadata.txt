@@ -1,0 +1,13 @@
+[general]
+name=Drainworks
+qgisMinimumVersion=3.22
+description=Import RIBX/GeoPackage sewer data, compute lost storage, show side-views.
+version=0.1.0
+author=Bastiaan Roos
+email=bastiaan@roosgeo.nl
+about=Import Dutch sewer inspection data (RIBX or GeoPackage), display it on the map, compute "verloren berging" (lost storage capacity), and view longitudinal profiles along a chosen trajectory.
+tracker=https://github.com/GetThePoint/qgis-drainworks-plugin/issues
+repository=https://github.com/GetThePoint/qgis-drainworks-plugin
+experimental=True
+deprecated=False
+icon=resources/icon.svg
