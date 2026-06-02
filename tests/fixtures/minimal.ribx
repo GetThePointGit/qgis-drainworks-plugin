@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DATA>
+  <ZA>
+    <A>NL</A>
+    <B>1.5.1</B>
+  </ZA>
+  <ZB_A>
+    <AAA>L001</AAA>
+    <AAD>P001</AAD>
+    <AAE><gml:Point xmlns:gml="http://www.opengis.net/gml"><gml:pos>100000.000 400000.000</gml:pos></gml:Point></AAE>
+    <AAF>P002</AAF>
+    <AAG><gml:Point xmlns:gml="http://www.opengis.net/gml"><gml:pos>100030.000 400000.000</gml:pos></gml:Point></AAG>
+    <ABF>2024-06-15</ABF>
+    <ACA>A</ACA>
+    <ACB>0.300</ACB>
+    <ACD>PVC</ACD>
+    <ACR>-2.500</ACR>
+    <ACS>-2.600</ACS>
+    <AXY><gml:LineString xmlns:gml="http://www.opengis.net/gml"><gml:posList>100000.000 400000.000 100030.000 400000.000</gml:posList></gml:LineString></AXY>
+    <ZC>
+      <A>BAF</A>
+      <I>0.0</I>
+    </ZC>
+    <ZC>
+      <A>BCA</A>
+      <B>A</B>
+      <I>12.5</I>
+    </ZC>
+  </ZB_A>
+  <ZB_C>
+    <CAA>P001</CAA>
+    <CAB><gml:Point xmlns:gml="http://www.opengis.net/gml"><gml:pos>100000.000 400000.000</gml:pos></gml:Point></CAB>
+    <CBF>2024-06-15</CBF>
+    <CAS>0.250</CAS>
+    <CAR>D-01</CAR>
+  </ZB_C>
+</DATA>
