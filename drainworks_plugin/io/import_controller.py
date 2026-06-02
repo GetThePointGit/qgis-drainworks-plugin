@@ -31,4 +31,9 @@ def load_geopackage_layers(gpkg_path) -> "tuple[QgsVectorLayer, QgsVectorLayer]"
     project = QgsProject.instance()
     project.addMapLayer(pipe_layer)
     project.addMapLayer(manhole_layer)
+
+    from drainworks_plugin.styling.symbology import style_manholes, style_pipes
+
+    style_pipes(pipe_layer)
+    style_manholes(manhole_layer)
     return manhole_layer, pipe_layer
