@@ -120,3 +120,15 @@ class TrajectoryGraphics:
             self.hover_marker.hide()
         self.route_band.reset(QgsWkbTypes.LineGeometry)
         self._redraw()
+
+    def destroy(self):
+        """Remove every canvas item (markers + rubber band) for plugin unload."""
+        self.clear()
+        scene = self.canvas.scene()
+        if self.hover_marker is not None:
+            scene.removeItem(self.hover_marker)
+            self.hover_marker = None
+        if self.route_band is not None:
+            scene.removeItem(self.route_band)
+            self.route_band = None
+        self._redraw()
