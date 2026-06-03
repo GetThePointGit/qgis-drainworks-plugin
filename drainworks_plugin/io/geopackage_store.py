@@ -17,7 +17,11 @@ RD_EPSG = 28992
 
 @dataclass
 class MeasurementRow:
-    """A row for the ``measurements`` layer (lost-capacity output)."""
+    """A row for the ``measurements`` layer (lost-capacity output).
+
+    ``geometry_wkt`` is the point on the map (interpolated along the pipe at
+    ``dist``); when set, the row renders on the canvas.
+    """
 
     pipe_code: str
     dist: float
@@ -25,6 +29,7 @@ class MeasurementRow:
     obb: float
     water_level: Optional[float] = None
     flooded_pct: Optional[float] = None
+    geometry_wkt: Optional[str] = None
 
 
 def _srs() -> "osr.SpatialReference":
@@ -115,15 +120,41 @@ def _write_measurements(ds, srs, measurements) -> None:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
     defn = layer.GetLayerDefn()
     for row in measurements:
-        feat = ogr.Feature(defn)
-        _set(feat, "pipe_code", row.pipe_code)
-        _set(feat, "dist", row.dist)
-        _set(feat, "bob", row.bob)
-        _set(feat, "obb", row.obb)
-        _set(feat, "water_level", row.water_level)
-        _set(feat, "flooded_pct", row.flooded_pct)
-        layer.CreateFeature(feat)
-        feat = None
+        _fill_measurement_feature(ogr.Feature(defn), row, layer)
+
+
+def _fill_measurement_feature(feat, row, layer) -> None:
+    """Populate and create a measurement feature (with geometry if present)."""
+    _set(feat, "pipe_code", row.pipe_code)
+    _set(feat, "dist", row.dist)
+    _set(feat, "bob", row.bob)
+    _set(feat, "obb", row.obb)
+    _set(feat, "water_level", row.water_level)
+    _set(feat, "flooded_pct", row.flooded_pct)
+    if getattr(row, "geometry_wkt", None):
+        feat.SetGeometry(ogr.CreateGeometryFromWkt(row.geometry_wkt))
+    layer.CreateFeature(feat)
+
+
+def replace_measurements(path, rows) -> int:
+    """Replace every feature in the ``measurements`` layer with ``rows``.
+
+    Returns the number of rows written. Used by the lost-capacity runner, which
+    rebuilds the whole layer (real + BOB-derived points) on every run.
+    """
+    ds = ogr.Open(str(path), update=1)
+    layer = ds.GetLayerByName("measurements")
+    if layer is None:
+        ds = None
+        return 0
+    layer.ResetReading()
+    for fid in [feat.GetFID() for feat in layer]:
+        layer.DeleteFeature(fid)
+    defn = layer.GetLayerDefn()
+    for row in rows:
+        _fill_measurement_feature(ogr.Feature(defn), row, layer)
+    ds = None
+    return len(rows)
 
 
 def read_pipes(path) -> list:
