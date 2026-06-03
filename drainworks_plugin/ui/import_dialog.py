@@ -1,7 +1,13 @@
-"""Import dialog: pick a RIBX or GeoPackage file and a target GeoPackage."""
+"""Import dialog: pick a RIBX or GeoPackage file and a target GeoPackage.
+
+The last-used directories are remembered in QGIS settings — separately for the
+import file and the target GeoPackage — so the file dialogs reopen where you
+left off.
+"""
 
 import os
 
+from qgis.core import QgsSettings
 from qgis.PyQt.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -11,6 +17,22 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
+
+# QgsSettings keys for the remembered start directories.
+SETTINGS_INPUT_DIR = "drainworks/lastInputDir"
+SETTINGS_TARGET_DIR = "drainworks/lastTargetDir"
+
+
+def _remembered_dir(key: str) -> str:
+    """Return the stored directory for ``key`` (empty string if none/invalid)."""
+    value = QgsSettings().value(key, "", type=str)
+    return value if value and os.path.isdir(value) else ""
+
+
+def _remember_dir(key: str, file_path: str) -> None:
+    """Store the directory of ``file_path`` under ``key``."""
+    if file_path:
+        QgsSettings().setValue(key, os.path.dirname(file_path))
 
 
 class ImportDialog(QDialog):
@@ -46,19 +68,26 @@ class ImportDialog(QDialog):
         return row
 
     def _browse_input(self):
+        start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select RIBX or GeoPackage", "", "Sewer data (*.ribx *.xml *.gpkg)"
+            self, "Select RIBX or GeoPackage", start_dir, "Sewer data (*.ribx *.xml *.gpkg)"
         )
         if path:
             self.input_path.setText(path)
+            _remember_dir(SETTINGS_INPUT_DIR, path)
             if not self.output_path.text():
                 base = os.path.splitext(path)[0]
                 self.output_path.setText(base + ".gpkg")
 
     def _browse_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Target GeoPackage", "", "GeoPackage (*.gpkg)")
+        # Prefer the remembered target dir; fall back to the chosen input's dir.
+        start_dir = _remembered_dir(SETTINGS_TARGET_DIR)
+        if not start_dir and self.input_path.text():
+            start_dir = os.path.dirname(self.input_path.text())
+        path, _ = QFileDialog.getSaveFileName(self, "Target GeoPackage", start_dir, "GeoPackage (*.gpkg)")
         if path:
             self.output_path.setText(path)
+            _remember_dir(SETTINGS_TARGET_DIR, path)
 
     def values(self):
         """Return (input_path, output_gpkg_path) as strings."""
