@@ -1,11 +1,13 @@
-"""Main plugin object: registers a toolbar button and menu entry."""
+"""Main plugin object: builds a dedicated Drainworks toolbar and menu."""
 
 import os
 
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
 PLUGIN_DIR = os.path.dirname(__file__)
+LOGO_PATH = os.path.join(PLUGIN_DIR, "resources", "logo.png")
 
 
 class DrainworksPlugin:
@@ -15,6 +17,7 @@ class DrainworksPlugin:
         self.iface = iface
         self.actions = []
         self.menu = "&Drainworks"
+        self.toolbar = None
         self.manhole_layer = None
         self.pipe_layer = None
         self.gpkg_path = None
@@ -22,32 +25,37 @@ class DrainworksPlugin:
         self.map_tool = None
 
     def initGui(self):  # noqa: N802 (QGIS-required name)
-        """Create toolbar/menu actions. Called by QGIS on plugin load."""
-        icon = QIcon(os.path.join(PLUGIN_DIR, "resources", "icon.svg"))
-        action = QAction(icon, "Import sewer data…", self.iface.mainWindow())
-        action.triggered.connect(self.on_import)
-        self.iface.addToolBarIcon(action)
+        """Create the Drainworks toolbar, its buttons, and matching menu entries."""
+        self.toolbar = self.iface.addToolBar("Drainworks")
+        self.toolbar.setObjectName("DrainworksToolbar")
+        # Show each button's label next to the logo so the buttons are legible.
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+        self._add_action("Importeren", self.on_import,
+                         tooltip="Importeer riooldata (RIBX of GeoPackage)")
+        self._add_action("Traject (side-view)", self.on_pick_trajectory,
+                         tooltip="Kies een traject langs de riolering en toon het langsprofiel")
+        self._add_action("Verloren berging", self.on_compute_loss,
+                         tooltip="Bereken en toon de verloren berging")
+
+    def _add_action(self, text, callback, tooltip=None):
+        """Create an action with the Drainworks logo and register it on toolbar + menu."""
+        action = QAction(QIcon(LOGO_PATH), text, self.iface.mainWindow())
+        action.triggered.connect(callback)
+        action.setToolTip(tooltip or text)
+        self.toolbar.addAction(action)
         self.iface.addPluginToMenu(self.menu, action)
         self.actions.append(action)
-
-        traj = QAction(icon, "Pick trajectory (side-view)", self.iface.mainWindow())
-        traj.triggered.connect(self.on_pick_trajectory)
-        self.iface.addToolBarIcon(traj)
-        self.iface.addPluginToMenu(self.menu, traj)
-        self.actions.append(traj)
-
-        loss = QAction(icon, "Compute lost capacity", self.iface.mainWindow())
-        loss.triggered.connect(self.on_compute_loss)
-        self.iface.addToolBarIcon(loss)
-        self.iface.addPluginToMenu(self.menu, loss)
-        self.actions.append(loss)
+        return action
 
     def unload(self):
-        """Remove actions. Called by QGIS on plugin unload."""
+        """Remove the toolbar, its actions, and menu entries. Called on unload."""
         for action in self.actions:
             self.iface.removePluginMenu(self.menu, action)
-            self.iface.removeToolBarIcon(action)
         self.actions = []
+        if self.toolbar is not None:
+            del self.toolbar
+            self.toolbar = None
 
     def on_import(self):
         """Open the import dialog and import the selected file."""
