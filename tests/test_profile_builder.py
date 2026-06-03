@@ -25,6 +25,7 @@ def test_profile_orientation_and_cumulative_distance():
     bobs = [v.bob for v in profile.vertices]
     assert bobs == pytest.approx([-2.0, -2.4, -2.4, -2.8])
     assert profile.vertices[0].obb == pytest.approx(-1.7)
+    assert [b for _, b in profile.ideal] == pytest.approx([-2.0, -2.4, -2.4, -2.8])
 
 
 def test_profile_flips_pipe_when_traversed_backwards():
