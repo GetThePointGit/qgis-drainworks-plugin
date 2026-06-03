@@ -46,32 +46,65 @@ def _set(feature, name, value) -> None:
         feature.SetField(name, value)
 
 
-def point_along_wkt(line_wkt, dist):
-    """Return the WKT POINT at ``dist`` metres along a WKT LINESTRING, or None."""
+def _parse_linestring_wkt(line_wkt):
+    """Return [(x, y), ...] vertices of a WKT LINESTRING, or [] if not parseable."""
     if not line_wkt or "LINESTRING" not in line_wkt.upper():
-        return None
+        return []
     try:
         inside = line_wkt[line_wkt.index("(") + 1: line_wkt.rindex(")")]
     except ValueError:
-        return None
+        return []
     pts = []
     for part in inside.split(","):
         xy = part.split()
         if len(xy) >= 2:
             pts.append((float(xy[0]), float(xy[1])))
+    return pts
+
+
+def _cumulative(pts):
+    cum = [0.0]
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        cum.append(cum[-1] + ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5)
+    return cum
+
+
+def _interpolate(pts, cum, dist):
+    dist = min(max(dist, 0.0), cum[-1])
+    for i in range(len(pts) - 1):
+        if cum[i] <= dist <= cum[i + 1]:
+            seg = cum[i + 1] - cum[i]
+            t = 0.0 if seg == 0 else (dist - cum[i]) / seg
+            return (pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t,
+                    pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t)
+    return pts[-1]
+
+
+def point_along_wkt(line_wkt, dist):
+    """Return the WKT POINT at ``dist`` metres along a WKT LINESTRING, or None."""
+    pts = _parse_linestring_wkt(line_wkt)
     if len(pts) < 2:
         return None
-    remaining = max(0.0, dist)
-    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
-        seg = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        if seg == 0:
-            continue
-        if remaining <= seg:
-            t = remaining / seg
-            return f"POINT ({x1 + (x2 - x1) * t:.3f} {y1 + (y2 - y1) * t:.3f})"
-        remaining -= seg
-    x, y = pts[-1]
+    x, y = _interpolate(pts, _cumulative(pts), dist)
     return f"POINT ({x:.3f} {y:.3f})"
+
+
+def linestring_substring_wkt(line_wkt, d0, d1):
+    """Return the WKT LINESTRING of the part of ``line_wkt`` between d0 and d1."""
+    pts = _parse_linestring_wkt(line_wkt)
+    if len(pts) < 2 or d1 <= d0:
+        return None
+    cum = _cumulative(pts)
+    d0 = min(max(d0, 0.0), cum[-1])
+    d1 = min(max(d1, 0.0), cum[-1])
+    out = [_interpolate(pts, cum, d0)]
+    for i, c in enumerate(cum):
+        if d0 < c < d1:
+            out.append(pts[i])
+    out.append(_interpolate(pts, cum, d1))
+    if len(out) < 2:
+        return None
+    return "LINESTRING (" + ", ".join(f"{x:.3f} {y:.3f}" for x, y in out) + ")"
 
 
 def write_geopackage(path, manholes, pipes, measurements) -> Path:
@@ -84,9 +117,13 @@ def write_geopackage(path, manholes, pipes, measurements) -> Path:
     ds = driver.CreateDataSource(str(path))
     srs = _srs()
 
+    # One transaction around all inserts — without it, every feature is its own
+    # SQLite commit (hundreds of thousands of measurement points take minutes).
+    ds.StartTransaction()
     _write_manholes(ds, srs, manholes)
     _write_pipes(ds, srs, pipes)
     _write_measurements(ds, srs, measurements)
+    ds.CommitTransaction()
 
     ds = None  # flush + close
     return path
@@ -171,18 +208,51 @@ def replace_measurements(path, rows) -> int:
     rebuilds the whole layer (real + BOB-derived points) on every run.
     """
     ds = ogr.Open(str(path), update=1)
-    layer = ds.GetLayerByName("measurements")
-    if layer is None:
-        ds = None
-        return 0
-    layer.ResetReading()
-    for fid in [feat.GetFID() for feat in layer]:
-        layer.DeleteFeature(fid)
-    defn = layer.GetLayerDefn()
-    for row in rows:
-        _fill_measurement_feature(ogr.Feature(defn), row, layer)
+    # Drop and recreate the layer (fast) instead of deleting features one by one.
+    for i in range(ds.GetLayerCount()):
+        if ds.GetLayer(i).GetName() == "measurements":
+            ds.DeleteLayer(i)
+            break
+    ds.StartTransaction()
+    _write_measurements(ds, _srs(), rows)
+    ds.CommitTransaction()
     ds = None
     return len(rows)
+
+
+def write_berging_lines(path, line_rows) -> int:
+    """Create/replace the ``berging`` LineString layer (aggregated lost-storage).
+
+    Each row is a dict with ``pipe_code, dist_start, dist_end, length,
+    flooded_pct, water_level, lost_volume, geometry_wkt``.
+    """
+    ds = ogr.Open(str(path), update=1)
+    for i in range(ds.GetLayerCount()):
+        if ds.GetLayer(i).GetName() == "berging":
+            ds.DeleteLayer(i)
+            break
+    layer = ds.CreateLayer("berging", _srs(), ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    for name in ["dist_start", "dist_end", "length", "flooded_pct",
+                 "water_level", "lost_volume"]:
+        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for row in line_rows:
+        feat = ogr.Feature(defn)
+        _set(feat, "pipe_code", row.get("pipe_code"))
+        _set(feat, "dist_start", row.get("dist_start"))
+        _set(feat, "dist_end", row.get("dist_end"))
+        _set(feat, "length", row.get("length"))
+        _set(feat, "flooded_pct", row.get("flooded_pct"))
+        _set(feat, "water_level", row.get("water_level"))
+        _set(feat, "lost_volume", row.get("lost_volume"))
+        if row.get("geometry_wkt"):
+            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
+        layer.CreateFeature(feat)
+    ds.CommitTransaction()
+    ds = None
+    return len(line_rows)
 
 
 def read_pipes(path) -> list:

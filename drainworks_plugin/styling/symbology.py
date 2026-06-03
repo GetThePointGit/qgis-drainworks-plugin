@@ -41,6 +41,25 @@ def style_manholes(layer) -> None:
     layer.triggerRepaint()
 
 
+def style_berging_lines(layer) -> None:
+    """Graduated blue->red LINE renderer on ``flooded_pct`` (0..1)."""
+    ranges = []
+    steps = [
+        (0.0, 0.25, FLOODED_LOW, "0.8"),
+        (0.25, 0.5, "#7fcdbb", "1.4"),
+        (0.5, 0.75, "#fec44f", "2.2"),
+        (0.75, 1.01, FLOODED_HIGH, "3.0"),
+    ]
+    for lower, upper, hex_color, width in steps:
+        symbol = QgsLineSymbol.createSimple({"color": hex_color, "width": width})
+        symbol.setColor(QColor(hex_color))
+        label = f"{int(lower * 100)}–{int(min(upper, 1.0) * 100)}%"
+        ranges.append(QgsRendererRange(lower, upper, symbol, label))
+    renderer = QgsGraduatedSymbolRenderer("flooded_pct", ranges)
+    layer.setRenderer(renderer)
+    layer.triggerRepaint()
+
+
 def style_measurements_by_flooded(layer) -> None:
     """Graduated blue->red renderer on the ``flooded_pct`` field (0..1)."""
     ranges = []
