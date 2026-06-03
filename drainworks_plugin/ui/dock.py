@@ -71,6 +71,12 @@ class DrainworksDock(QDockWidget):
         self.computed_sinks = None  # sinks at the last berging computation
         self.map_tool = None
         self.graphics = None
+        from drainworks_plugin.styling import views as _v
+        self.style_modes = {
+            "pipe_color": _v.PIPE_COLOR_DEFAULT, "pipe_width": _v.PIPE_WIDTH_DEFAULT,
+            "pipe_label": _v.PIPE_LABEL_NONE, "manhole_color": _v.MANHOLE_COLOR_DEFAULT,
+            "manhole_label": _v.MANHOLE_LABEL_NONE,
+        }
 
         self._build_ui()
 
@@ -91,9 +97,11 @@ class DrainworksDock(QDockWidget):
                                           checkable=True)
         self.btn_downstream = self._tool_button("Stroomafw.", "trajectory.svg",
                                                 self._on_downstream)
+        self.btn_style = self._tool_button("Opmaak", "lost_capacity.svg", self._on_style)
         actions.addWidget(self.btn_import)
         actions.addWidget(self.btn_traj)
         actions.addWidget(self.btn_downstream)
+        actions.addWidget(self.btn_style)
         actions.addStretch()
         left_layout.addLayout(actions)
 
@@ -174,7 +182,7 @@ class DrainworksDock(QDockWidget):
         return button
 
     def _set_data_enabled(self, enabled):
-        for widget in (self.btn_traj, self.btn_downstream, self.btn_loss,
+        for widget in (self.btn_traj, self.btn_downstream, self.btn_style, self.btn_loss,
                        self.sink_combo, self.btn_sink_map):
             widget.setEnabled(enabled)
 
@@ -237,6 +245,26 @@ class DrainworksDock(QDockWidget):
             self.measurements_by_pipe = read_measurements(self.gpkg_path)
         self._update_berging_button()
         self._rebuild()
+
+    def _on_style(self):
+        if self.pipe_layer is None or self.manhole_layer is None:
+            self.iface.messageBar().pushWarning("Drainworks", "Importeer eerst data.")
+            return
+        from drainworks_plugin.styling.views import apply_manhole_style, apply_pipe_style
+        from drainworks_plugin.ui.style_dialog import StyleDialog
+        from qgis.PyQt.QtWidgets import QDialog
+
+        dialog = StyleDialog(self.style_modes, self.iface.mainWindow())
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        self.style_modes = dialog.values()
+        apply_pipe_style(self.pipe_layer, self.style_modes["pipe_color"],
+                         self.style_modes["pipe_width"], self.style_modes["pipe_label"])
+        apply_manhole_style(self.manhole_layer, self.style_modes["manhole_color"],
+                            self.style_modes["manhole_label"])
+        self.iface.mapCanvas().refresh()
+        self.iface.layerTreeView().refreshLayerSymbology(self.pipe_layer.id())
+        self.iface.layerTreeView().refreshLayerSymbology(self.manhole_layer.id())
 
     def _on_downstream(self):
         """Extend the trajectory downstream from the last chosen put."""

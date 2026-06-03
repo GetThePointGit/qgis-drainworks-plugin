@@ -1,0 +1,131 @@
+"""Switchable map styling for the pipe and manhole layers.
+
+Each setting (colour / width / label) maps to a data-defined symbol property or
+labeling configuration, so combinations can be applied independently.
+"""
+
+from qgis.core import (
+    QgsLineSymbol,
+    QgsMarkerSymbol,
+    QgsPalLayerSettings,
+    QgsProperty,
+    QgsSingleSymbolRenderer,
+    QgsSymbolLayer,
+    QgsVectorLayerSimpleLabeling,
+)
+
+from drainworks_plugin.styling.colors import MANHOLE_DEFAULT, PIPE_DEFAULT
+
+# Pipe colour modes.
+PIPE_COLOR_DEFAULT = "default"
+PIPE_COLOR_BOB = "bob"        # hoogteligging (gemiddelde BOB)
+PIPE_COLOR_SLOPE = "slope"    # verhang
+# Pipe width modes.
+PIPE_WIDTH_DEFAULT = "default"
+PIPE_WIDTH_DIAMETER = "diameter"
+# Pipe label modes.
+PIPE_LABEL_NONE = "none"
+PIPE_LABEL_CODE = "code"
+PIPE_LABEL_BOB = "bob"
+PIPE_LABEL_DIAMETER = "diameter"
+
+# Manhole colour modes.
+MANHOLE_COLOR_DEFAULT = "default"
+MANHOLE_COLOR_BOTTOM = "bottom"   # bodemhoogte
+MANHOLE_COLOR_GROUND = "ground"   # maaiveld
+# Manhole label modes.
+MANHOLE_LABEL_NONE = "none"
+MANHOLE_LABEL_CODE = "code"
+MANHOLE_LABEL_BOTTOM = "bottom"
+MANHOLE_LABEL_GROUND = "ground"
+
+
+def _minmax(layer, field):
+    idx = layer.fields().indexOf(field)
+    if idx < 0:
+        return 0.0, 1.0
+    mn = layer.minimumValue(idx)
+    mx = layer.maximumValue(idx)
+    if mn is None or mx is None:
+        return 0.0, 1.0
+    if mn == mx:
+        return mn, mn + 1.0
+    return mn, mx
+
+
+def _ramp_expr(field, mn, mx, ramp="Spectral"):
+    # Spectral: low -> red, high -> blue; invert so deeper (lower) reads cool.
+    return f"ramp_color('{ramp}', scale_linear(\"{field}\", {mn}, {mx}, 1, 0))"
+
+
+def _apply_label(layer, expression):
+    if expression is None:
+        layer.setLabelsEnabled(False)
+        layer.setLabeling(None)
+        layer.triggerRepaint()
+        return
+    settings = QgsPalLayerSettings()
+    settings.fieldName = expression
+    settings.isExpression = True
+    layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+    layer.setLabelsEnabled(True)
+    layer.triggerRepaint()
+
+
+def apply_pipe_style(layer, color_mode, width_mode, label_mode):
+    symbol = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
+    sl = symbol.symbolLayer(0)
+
+    if color_mode == PIPE_COLOR_BOB:
+        mn, mx = _minmax(layer, "bob_avg")
+        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeColor,
+                                  QgsProperty.fromExpression(_ramp_expr("bob_avg", mn, mx)))
+    elif color_mode == PIPE_COLOR_SLOPE:
+        mn, mx = _minmax(layer, "slope")
+        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeColor,
+                                  QgsProperty.fromExpression(_ramp_expr("slope", mn, mx)))
+
+    if width_mode == PIPE_WIDTH_DIAMETER:
+        mn, mx = _minmax(layer, "diameter")
+        expr = f'scale_linear("diameter", {mn}, {mx}, 0.4, 3.0)'
+        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeWidth,
+                                  QgsProperty.fromExpression(expr))
+
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+    label_expr = {
+        PIPE_LABEL_NONE: None,
+        PIPE_LABEL_CODE: '"code"',
+        PIPE_LABEL_BOB: 'format_number("bob1", 2) || \' / \' || format_number("bob2", 2)',
+        PIPE_LABEL_DIAMETER: 'format_number("diameter", 2)',
+    }.get(label_mode)
+    _apply_label(layer, label_expr)
+    layer.triggerRepaint()
+
+
+def apply_manhole_style(layer, color_mode, label_mode):
+    symbol = QgsMarkerSymbol.createSimple(
+        {"name": "circle", "color": MANHOLE_DEFAULT, "size": "2.4",
+         "outline_color": "#ffffff", "outline_width": "0.2"}
+    )
+    sl = symbol.symbolLayer(0)
+
+    if color_mode == MANHOLE_COLOR_BOTTOM:
+        mn, mx = _minmax(layer, "bottom_level")
+        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor,
+                                  QgsProperty.fromExpression(_ramp_expr("bottom_level", mn, mx)))
+    elif color_mode == MANHOLE_COLOR_GROUND:
+        mn, mx = _minmax(layer, "ground_level")
+        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor,
+                                  QgsProperty.fromExpression(_ramp_expr("ground_level", mn, mx)))
+
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+
+    label_expr = {
+        MANHOLE_LABEL_NONE: None,
+        MANHOLE_LABEL_CODE: '"code"',
+        MANHOLE_LABEL_BOTTOM: 'format_number("bottom_level", 2)',
+        MANHOLE_LABEL_GROUND: 'format_number("ground_level", 2)',
+    }.get(label_mode)
+    _apply_label(layer, label_expr)
+    layer.triggerRepaint()

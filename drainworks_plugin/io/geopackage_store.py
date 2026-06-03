@@ -119,8 +119,9 @@ def write_geopackage(path, manholes, pipes, measurements) -> Path:
 
     # One transaction around all inserts — without it, every feature is its own
     # SQLite commit (hundreds of thousands of measurement points take minutes).
+    bottom_levels = _manhole_bottom_levels(pipes)
     ds.StartTransaction()
-    _write_manholes(ds, srs, manholes)
+    _write_manholes(ds, srs, manholes, bottom_levels)
     _write_pipes(ds, srs, pipes)
     _write_measurements(ds, srs, measurements)
     ds.CommitTransaction()
@@ -129,11 +130,23 @@ def write_geopackage(path, manholes, pipes, measurements) -> Path:
     return path
 
 
-def _write_manholes(ds, srs, manholes) -> None:
+def _manhole_bottom_levels(pipes) -> dict:
+    """{manhole_code: lowest connected pipe BOB} — the put's bottom (bodemhoogte)."""
+    levels = {}
+    for p in pipes:
+        for code, bob in ((p.manhole1, p.bob1), (p.manhole2, p.bob2)):
+            if code and bob is not None:
+                levels[code] = bob if code not in levels else min(levels[code], bob)
+    return levels
+
+
+def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
+    bottom_levels = bottom_levels or {}
     layer = ds.CreateLayer("manholes", srs, ogr.wkbPoint)
     layer.CreateField(ogr.FieldDefn("code", ogr.OFTString))
     layer.CreateField(ogr.FieldDefn("node_type", ogr.OFTString))
-    layer.CreateField(ogr.FieldDefn("ground_level", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("ground_level", ogr.OFTReal))   # maaiveld / putdeksel
+    layer.CreateField(ogr.FieldDefn("bottom_level", ogr.OFTReal))   # bodemhoogte (laagste bob)
     layer.CreateField(ogr.FieldDefn("is_sink", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
     for m in manholes:
@@ -141,6 +154,7 @@ def _write_manholes(ds, srs, manholes) -> None:
         _set(feat, "code", m.code)
         _set(feat, "node_type", m.node_type)
         _set(feat, "ground_level", m.ground_level)
+        _set(feat, "bottom_level", bottom_levels.get(m.code))
         feat.SetField("is_sink", 1 if m.is_sink else 0)
         if m.geometry_wkt:
             feat.SetGeometry(ogr.CreateGeometryFromWkt(m.geometry_wkt))
@@ -152,7 +166,7 @@ def _write_pipes(ds, srs, pipes) -> None:
     layer = ds.CreateLayer("pipes", srs, ogr.wkbLineString)
     str_fields = ["code", "manhole1", "manhole2", "shape", "material",
                   "sewerage_type", "inspection_date"]
-    real_fields = ["diameter", "width", "bob1", "bob2", "length"]
+    real_fields = ["diameter", "width", "bob1", "bob2", "length", "bob_avg", "slope"]
     for name in str_fields:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTString))
     for name in real_fields:
@@ -172,6 +186,11 @@ def _write_pipes(ds, srs, pipes) -> None:
         _set(feat, "bob1", p.bob1)
         _set(feat, "bob2", p.bob2)
         _set(feat, "length", p.length)
+        # Derived: mean BOB (hoogteligging) and slope/verhang (per metre).
+        if p.bob1 is not None and p.bob2 is not None:
+            _set(feat, "bob_avg", (p.bob1 + p.bob2) / 2.0)
+            if p.length:
+                _set(feat, "slope", abs(p.bob1 - p.bob2) / p.length)
         if p.geometry_wkt:
             feat.SetGeometry(ogr.CreateGeometryFromWkt(p.geometry_wkt))
         layer.CreateFeature(feat)
