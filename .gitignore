@@ -179,3 +179,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# macOS
+.DS_Store
+
+# Vendored pyqtgraph: keep the runtime package, drop its bundled examples
+drainworks_plugin/external/pyqtgraph/examples/
