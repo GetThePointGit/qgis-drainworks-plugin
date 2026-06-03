@@ -101,10 +101,16 @@ class DrainworksDock(QDockWidget):
         add_sink.setIcon(_icon("sink.svg"))
         add_sink.setToolTip("Voeg de geselecteerde put toe als sink")
         add_sink.clicked.connect(self._on_add_sink)
+        self.btn_sink_map = QToolButton()
+        self.btn_sink_map.setText("Kaart")
+        self.btn_sink_map.setCheckable(True)
+        self.btn_sink_map.setToolTip("Kies sink-putten door ze op de kaart aan te klikken")
+        self.btn_sink_map.clicked.connect(self._on_sink_map_toggled)
         clear_sink = QPushButton("Wis")
         clear_sink.clicked.connect(self._on_clear_sinks)
         sink_row.addWidget(self.sink_combo, 1)
         sink_row.addWidget(add_sink)
+        sink_row.addWidget(self.btn_sink_map)
         sink_row.addWidget(clear_sink)
         left_layout.addLayout(sink_row)
         self.sink_label = QLabel("geen sinks gekozen")
@@ -161,7 +167,7 @@ class DrainworksDock(QDockWidget):
         return button
 
     def _set_data_enabled(self, enabled):
-        for widget in (self.btn_traj, self.btn_loss, self.sink_combo):
+        for widget in (self.btn_traj, self.btn_loss, self.sink_combo, self.btn_sink_map):
             widget.setEnabled(enabled)
 
     # --------------------------------------------------------------- data
@@ -197,6 +203,7 @@ class DrainworksDock(QDockWidget):
         if self.graphics is None:
             self.graphics = TrajectoryGraphics(self.iface.mapCanvas())
         self.waypoints = []
+        self._update_sink_markers()
         self._rebuild()
         self._set_data_enabled(True)
 
@@ -217,21 +224,43 @@ class DrainworksDock(QDockWidget):
         self._rebuild()
 
     def _on_traj_toggled(self, checked):
+        if checked:
+            self.btn_sink_map.setChecked(False)  # exclusive with sink-pick
+            self._activate_tool(self._on_pick, self._on_reset)
+        else:
+            self._clear_tool()
+
+    def _on_sink_map_toggled(self, checked):
+        if checked:
+            self.btn_traj.setChecked(False)  # exclusive with trajectory
+            self._activate_tool(self._on_sink_picked, on_reset=lambda: None)
+        else:
+            self._clear_tool()
+
+    def _activate_tool(self, on_pick, on_reset):
         from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
 
+        if self.manhole_layer is None:
+            return
         canvas = self.iface.mapCanvas()
-        if checked and self.manhole_layer is not None:
-            self.map_tool = TrajectoryMapTool(
-                canvas, self.manhole_layer, self._on_pick, self._on_reset
-            )
-            canvas.setMapTool(self.map_tool)
-        elif self.map_tool is not None:
+        if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
+        self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset)
+        canvas.setMapTool(self.map_tool)
+
+    def _clear_tool(self):
+        if self.map_tool is not None:
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self.map_tool = None
 
     # ------------------------------------------------------------- sinks
     def _on_add_sink(self):
-        code = self.sink_combo.currentText().strip()
+        self._add_sink(self.sink_combo.currentText().strip())
+
+    def _on_sink_picked(self, code):
+        self._add_sink(code)
+
+    def _add_sink(self, code):
         if code and code in self.manhole_points:
             self.sinks.add(code)
             self._apply_sinks()
@@ -246,6 +275,14 @@ class DrainworksDock(QDockWidget):
         if self.gpkg_path:
             set_sinks(self.gpkg_path, self.sinks)
         self._update_sink_label()
+        self._update_sink_markers()
+
+    def _update_sink_markers(self):
+        if self.graphics is None:
+            return
+        points = [QgsPointXY(*self.manhole_points[c]) for c in self.sinks
+                  if c in self.manhole_points]
+        self.graphics.set_sink_markers(points)
 
     def _update_sink_label(self):
         if self.sinks:
@@ -373,6 +410,7 @@ class DrainworksDock(QDockWidget):
             self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self.map_tool = None
         self.btn_traj.setChecked(False)
+        self.btn_sink_map.setChecked(False)
 
     def clear_graphics(self):
         if self.graphics is not None:

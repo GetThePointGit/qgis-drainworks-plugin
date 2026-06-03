@@ -133,7 +133,7 @@ class DrainworksPlugin:
 
         from drainworks_plugin.io.import_controller import add_layer_to_group
         from drainworks_plugin.lostcapacity.runner import compute_and_store
-        from drainworks_plugin.styling.symbology import style_measurements_by_flooded
+        from drainworks_plugin.styling.symbology import style_berging_lines
 
         try:
             n = compute_and_store(self.gpkg_path, correct_bob=correct_bob)
@@ -141,8 +141,13 @@ class DrainworksPlugin:
             self.iface.messageBar().pushCritical("Drainworks", f"Computation failed: {exc}")
             return
 
-        layer = QgsVectorLayer(f"{self.gpkg_path}|layername=measurements", "Verloren berging", "ogr")
+        # Replace any previous berging layer, then load the aggregated lines.
+        from qgis.core import QgsProject
+
+        for lyr in QgsProject.instance().mapLayersByName("Verloren berging"):
+            QgsProject.instance().removeMapLayer(lyr.id())
+        layer = QgsVectorLayer(f"{self.gpkg_path}|layername=berging", "Verloren berging", "ogr")
         if layer.isValid():
-            style_measurements_by_flooded(layer)
+            style_berging_lines(layer)
             add_layer_to_group(layer, self.layer_group, on_top=True)
-        self.iface.messageBar().pushSuccess("Drainworks", f"Lost capacity computed for {n} points.")
+        self.iface.messageBar().pushSuccess("Drainworks", f"Verloren berging berekend ({n} punten).")

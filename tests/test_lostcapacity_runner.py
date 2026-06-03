@@ -57,3 +57,10 @@ def test_compute_and_store_bob_fallback_without_measurements(tmp_gpkg):
     assert any((v or 0) > 0 for v in flooded)  # the valley at P2 holds water
     layer.ResetReading()
     assert layer.GetNextFeature().GetGeometryRef() is not None  # points have geometry
+
+    # Aggregated berging LINE layer exists with line geometry.
+    berging = ds.GetLayerByName("berging")
+    assert berging is not None and berging.GetFeatureCount() > 0
+    bfeat = berging.GetNextFeature()
+    assert bfeat.GetGeometryRef().GetGeometryName() == "LINESTRING"
+    assert bfeat.GetField("length") > 0

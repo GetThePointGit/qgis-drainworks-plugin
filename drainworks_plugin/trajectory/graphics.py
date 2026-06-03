@@ -46,6 +46,7 @@ class TrajectoryGraphics:
         self.route_band.setWidth(2)
         self.route_band.setLineStyle(Qt.DashLine)
         self.markers = []
+        self.sink_markers = []
 
     def set_markers(self, labelled_points):
         """labelled_points: iterable of (label, QgsPointXY)."""
@@ -62,6 +63,21 @@ class TrajectoryGraphics:
             if geom is not None and not geom.isEmpty():
                 self.route_band.addGeometry(geom, None)
 
+    def set_sink_markers(self, points):
+        """points: iterable of QgsPointXY for the chosen sink manholes."""
+        for marker in self.sink_markers:
+            self.canvas.scene().removeItem(marker)
+        self.sink_markers = []
+        for point in points:
+            marker = QgsVertexMarker(self.canvas)
+            marker.setIconType(QgsVertexMarker.ICON_INVERTED_TRIANGLE)
+            marker.setColor(QColor("#0079c1"))
+            marker.setFillColor(QColor("#01aeed"))
+            marker.setIconSize(16)
+            marker.setPenWidth(3)
+            marker.setCenter(point)
+            self.sink_markers.append(marker)
+
     def clear_markers(self):
         for marker in self.markers:
             self.canvas.scene().removeItem(marker)
@@ -69,4 +85,7 @@ class TrajectoryGraphics:
 
     def clear(self):
         self.clear_markers()
+        for marker in self.sink_markers:
+            self.canvas.scene().removeItem(marker)
+        self.sink_markers = []
         self.route_band.reset(QgsWkbTypes.LineGeometry)

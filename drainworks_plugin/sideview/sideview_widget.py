@@ -19,7 +19,10 @@ class SideViewWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         pg.setConfigOptions(antialias=True)
+        pg.setConfigOption("background", "w")
+        pg.setConfigOption("foreground", "k")
         self.plot = pg.PlotWidget()
+        self.plot.setBackground("w")
         self.plot.setLabel("bottom", "Afstand", units="m")
         self.plot.setLabel("left", "Hoogte (NAP)", units="m")
         self.plot.showGrid(x=True, y=True, alpha=0.3)
