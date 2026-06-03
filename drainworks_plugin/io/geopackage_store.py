@@ -139,6 +139,11 @@ def read_pipes(path) -> list:
             from datetime import date
 
             inspection_date = date.fromisoformat(date_str)
+        # Fall back to the geometry length when the stored length is missing or
+        # zero, so routing/profile distances are always available.
+        length = feat.GetField("length")
+        if (not length) and geom is not None:
+            length = geom.Length()
         pipes.append(
             rgs_ribx.Pipe(
                 code=feat.GetField("code"),
@@ -150,7 +155,7 @@ def read_pipes(path) -> list:
                 width=feat.GetField("width"),
                 bob1=feat.GetField("bob1"),
                 bob2=feat.GetField("bob2"),
-                length=feat.GetField("length"),
+                length=length,
                 material=feat.GetField("material"),
                 sewerage_type=feat.GetField("sewerage_type"),
                 inspection_date=inspection_date,

@@ -5,6 +5,7 @@ from qgis.core import (
     QgsLineSymbol,
     QgsMarkerSymbol,
     QgsRendererRange,
+    QgsSingleSymbolRenderer,
 )
 from qgis.PyQt.QtGui import QColor
 
@@ -17,18 +18,26 @@ from drainworks_plugin.styling.colors import (
 
 
 def style_pipes(layer) -> None:
-    """Render pipes as white lines, width 0.6 mm."""
-    symbol = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.6"})
-    layer.renderer().setSymbol(symbol)
+    """Render pipes as blue lines, width 0.66 mm."""
+    symbol = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
+    # Replace the whole renderer (not just the symbol) so the layer-tree legend
+    # swatch updates to match the canvas instead of QGIS's random default color.
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.triggerRepaint()
 
 
 def style_manholes(layer) -> None:
-    """Render manholes as green circles, size 2.4 mm."""
+    """Render manholes as green circles with a thin white outline."""
     symbol = QgsMarkerSymbol.createSimple(
-        {"name": "circle", "color": MANHOLE_DEFAULT, "size": "2.4"}
+        {
+            "name": "circle",
+            "color": MANHOLE_DEFAULT,
+            "size": "2.4",
+            "outline_color": "#ffffff",
+            "outline_width": "0.2",
+        }
     )
-    layer.renderer().setSymbol(symbol)
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.triggerRepaint()
 
 

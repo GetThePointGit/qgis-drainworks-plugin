@@ -12,9 +12,9 @@ STATUS_COLORS = {
     "IsNieuw": "#775b94",
 }
 
-# Pipe outline default.
-PIPE_DEFAULT = "#ffffff"
-MANHOLE_DEFAULT = "#398a39"
+# Map symbology defaults (visible on a light QGIS canvas).
+PIPE_DEFAULT = "#0079c1"     # blue line — white was invisible on the canvas
+MANHOLE_DEFAULT = "#398a39"  # green nodes
 
 # Lost-capacity color ramp endpoints (dry -> fully flooded).
 FLOODED_LOW = "#2c7fb8"    # blue, low loss
