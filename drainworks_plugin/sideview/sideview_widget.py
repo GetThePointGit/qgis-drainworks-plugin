@@ -1,22 +1,21 @@
-"""A dockable pyqtgraph panel showing a longitudinal sewer profile.
+"""A reusable pyqtgraph widget showing a longitudinal sewer profile.
 
-Draws the invert (bob) line, the crown (obb) line, an optional water-level
-fill (verloren berging), and observation markers. pyqtgraph gives free zoom/pan.
+Draws the invert (bob) line, the crown (obb) line, an optional water-level fill
+(verloren berging), and observation markers. pyqtgraph gives free zoom/pan.
+Embedded in the Drainworks dock.
 """
 
 import pyqtgraph as pg
 from qgis.PyQt.QtCore import Qt
-from qgis.PyQt.QtWidgets import QDockWidget, QVBoxLayout, QWidget
+from qgis.PyQt.QtWidgets import QVBoxLayout, QWidget
 
 
-class SideViewPanel(QDockWidget):
-    """Dock widget plotting a :class:`Profile`."""
+class SideViewWidget(QWidget):
+    """Plots a :class:`Profile` (from profile_builder.build_profile)."""
 
     def __init__(self, parent=None):
-        super().__init__("Drainworks — side-view", parent)
-        self.setObjectName("DrainworksSideView")
-        container = QWidget()
-        layout = QVBoxLayout(container)
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         pg.setConfigOptions(antialias=True)
@@ -26,19 +25,22 @@ class SideViewPanel(QDockWidget):
         self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.addLegend()
         layout.addWidget(self.plot)
-        self.setWidget(container)
+
+    def clear(self) -> None:
+        self.plot.clear()
 
     def show_profile(self, profile) -> None:
-        """Render a Profile (from profile_builder.build_profile)."""
+        """Render a Profile."""
         self.plot.clear()
 
         dists = [v.dist for v in profile.vertices]
         bobs = [v.bob for v in profile.vertices]
         obbs = [v.obb for v in profile.vertices]
+        if not dists:
+            return
 
-        # Crown (top of pipe).
+        # Crown (top of pipe) and invert (bottom of pipe).
         self.plot.plot(dists, obbs, pen=pg.mkPen("#888888", width=1), name="Bovenkant buis")
-        # Invert (bottom of pipe).
         self.plot.plot(dists, bobs, pen=pg.mkPen("#333333", width=2), name="BOB (bodem)")
 
         # Water-level fill (verloren berging) where water_level is set.
@@ -51,7 +53,7 @@ class SideViewPanel(QDockWidget):
             self.plot.plot(dists, water, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine),
                            name="Waterpeil")
 
-        # Observation markers as vertical lines with labels.
+        # Observation markers as vertical dotted lines with labels.
         for marker in profile.observations:
             line = pg.InfiniteLine(
                 pos=marker.dist, angle=90,
