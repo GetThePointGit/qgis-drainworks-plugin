@@ -181,3 +181,34 @@ def read_manholes(path) -> list:
             )
         )
     return manholes
+
+
+def set_sinks(path, sink_codes) -> int:
+    """Set ``is_sink=1`` for manholes whose code is in ``sink_codes``, else 0.
+
+    Returns the number of manholes flagged as sink.
+    """
+    wanted = set(sink_codes or [])
+    ds = ogr.Open(str(path), update=1)
+    layer = ds.GetLayerByName("manholes")
+    flagged = 0
+    layer.ResetReading()
+    for feat in layer:
+        is_sink = 1 if feat.GetField("code") in wanted else 0
+        feat.SetField("is_sink", is_sink)
+        layer.SetFeature(feat)
+        flagged += is_sink
+    ds = None
+    return flagged
+
+
+def read_manhole_points(path):
+    """Return {code: (x, y)} for all manholes with a point geometry."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("manholes")
+    points = {}
+    for feat in layer:
+        geom = feat.GetGeometryRef()
+        if geom is not None:
+            points[feat.GetField("code")] = (geom.GetX(), geom.GetY())
+    return points

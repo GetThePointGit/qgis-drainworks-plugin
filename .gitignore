@@ -183,6 +183,12 @@ cython_debug/
 # macOS
 .DS_Store
 
+# JetBrains IDE
+.idea/
+
+# Test-generated GeoPackages (the committed example lives in example/)
+tests/fixtures/*.gpkg
+
 # Vendored pyqtgraph: keep the runtime package, drop its bundled examples
 drainworks_plugin/external/pyqtgraph/examples/
 

@@ -1,4 +1,4 @@
-"""Main plugin object: builds a dedicated Drainworks toolbar and menu."""
+"""Main plugin object: a logo toolbar button that toggles the Drainworks dock."""
 
 import os
 
@@ -15,51 +15,54 @@ class DrainworksPlugin:
 
     def __init__(self, iface):
         self.iface = iface
-        self.actions = []
-        self.menu = "&Drainworks"
+        self.action = None
         self.toolbar = None
+        self.menu = "&Drainworks"
+        self.dock = None
         self.manhole_layer = None
         self.pipe_layer = None
         self.layer_group = None
         self.gpkg_path = None
-        self.side_view = None
-        self.map_tool = None
 
     def initGui(self):  # noqa: N802 (QGIS-required name)
-        """Create the Drainworks toolbar, its buttons, and matching menu entries."""
+        """Create the toolbar toggle and the (hidden) dock. Called on load."""
+        from drainworks_plugin.ui.dock import DrainworksDock
+
+        self.dock = DrainworksDock(self)
+        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+        self.dock.hide()
+
         self.toolbar = self.iface.addToolBar("Drainworks")
         self.toolbar.setObjectName("DrainworksToolbar")
-        # Show each button's label next to the logo so the buttons are legible.
-        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.action = QAction(QIcon(LOGO_PATH), "Drainworks", self.iface.mainWindow())
+        self.action.setToolTip("Open/sluit het Drainworks-paneel")
+        self.action.setCheckable(True)
+        self.action.toggled.connect(self.dock.setVisible)
+        self.dock.visibilityChanged.connect(self._on_dock_visibility)
+        self.toolbar.addAction(self.action)
+        self.iface.addPluginToMenu(self.menu, self.action)
 
-        self._add_action("Importeren", self.on_import,
-                         tooltip="Importeer riooldata (RIBX of GeoPackage)")
-        self._add_action("Traject (side-view)", self.on_pick_trajectory,
-                         tooltip="Kies een traject langs de riolering en toon het langsprofiel")
-        self._add_action("Verloren berging", self.on_compute_loss,
-                         tooltip="Bereken en toon de verloren berging")
-
-    def _add_action(self, text, callback, tooltip=None):
-        """Create an action with the Drainworks logo and register it on toolbar + menu."""
-        action = QAction(QIcon(LOGO_PATH), text, self.iface.mainWindow())
-        action.triggered.connect(callback)
-        action.setToolTip(tooltip or text)
-        self.toolbar.addAction(action)
-        self.iface.addPluginToMenu(self.menu, action)
-        self.actions.append(action)
-        return action
+    def _on_dock_visibility(self, visible):
+        self.action.setChecked(visible)
+        if not visible:
+            self.dock.deactivate_tool()
 
     def unload(self):
-        """Remove the toolbar, its actions, and menu entries. Called on unload."""
-        for action in self.actions:
-            self.iface.removePluginMenu(self.menu, action)
-        self.actions = []
+        """Remove the dock, toolbar and menu entry. Called on unload."""
+        if self.dock is not None:
+            self.dock.deactivate_tool()
+            self.dock.clear_graphics()
+            self.iface.removeDockWidget(self.dock)
+            self.dock = None
+        if self.action is not None:
+            self.iface.removePluginMenu(self.menu, self.action)
         if self.toolbar is not None:
             del self.toolbar
             self.toolbar = None
 
+    # ------------------------------------------------------------- actions
     def on_import(self):
-        """Open the import dialog and import the selected file."""
+        """Open the import dialog, import the file, and feed the dock."""
         from qgis.PyQt.QtWidgets import QDialog
 
         from drainworks_plugin.io.import_controller import (
@@ -87,6 +90,9 @@ class DrainworksPlugin:
         self.layer_group = group
         self.gpkg_path = input_path if input_path.lower().endswith(".gpkg") else gpkg_path
         self._zoom_to_layers([pipe_layer, manhole_layer])
+        if self.dock is not None:
+            self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path)
+            self.dock.show()
         self.iface.messageBar().pushSuccess(
             "Drainworks",
             f"Imported {pipe_layer.featureCount()} pipes, "
@@ -95,11 +101,7 @@ class DrainworksPlugin:
 
     def _zoom_to_layers(self, layers):
         """Zoom the canvas to the combined extent of ``layers`` (CRS-aware)."""
-        from qgis.core import (
-            QgsCoordinateTransform,
-            QgsProject,
-            QgsRectangle,
-        )
+        from qgis.core import QgsCoordinateTransform, QgsProject, QgsRectangle
 
         extent = QgsRectangle()
         extent.setMinimal()
@@ -119,33 +121,6 @@ class DrainworksPlugin:
         canvas = self.iface.mapCanvas()
         canvas.setExtent(extent)
         canvas.refresh()
-
-    def on_pick_trajectory(self):
-        """Activate the trajectory map tool and ensure the side-view dock exists."""
-        if self.manhole_layer is None or self.gpkg_path is None:
-            self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
-            return
-
-        from qgis.PyQt.QtCore import Qt
-
-        from drainworks_plugin.sideview.sideview_panel import SideViewPanel
-        from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
-
-        if self.side_view is None:
-            self.side_view = SideViewPanel(self.iface.mainWindow())
-            self.iface.mainWindow().addDockWidget(Qt.BottomDockWidgetArea, self.side_view)
-
-        self.map_tool = TrajectoryMapTool(
-            self.iface.mapCanvas(),
-            self.manhole_layer,
-            self.gpkg_path,
-            self.side_view,
-            self.iface.messageBar(),
-        )
-        self.iface.mapCanvas().setMapTool(self.map_tool)
-        self.iface.messageBar().pushInfo(
-            "Drainworks", "Click manholes to build a route. Right-click to reset."
-        )
 
     def on_compute_loss(self):
         """Compute lost capacity and load the styled measurements layer."""
