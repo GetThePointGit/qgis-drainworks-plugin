@@ -46,6 +46,34 @@ def _set(feature, name, value) -> None:
         feature.SetField(name, value)
 
 
+def point_along_wkt(line_wkt, dist):
+    """Return the WKT POINT at ``dist`` metres along a WKT LINESTRING, or None."""
+    if not line_wkt or "LINESTRING" not in line_wkt.upper():
+        return None
+    try:
+        inside = line_wkt[line_wkt.index("(") + 1: line_wkt.rindex(")")]
+    except ValueError:
+        return None
+    pts = []
+    for part in inside.split(","):
+        xy = part.split()
+        if len(xy) >= 2:
+            pts.append((float(xy[0]), float(xy[1])))
+    if len(pts) < 2:
+        return None
+    remaining = max(0.0, dist)
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        seg = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        if seg == 0:
+            continue
+        if remaining <= seg:
+            t = remaining / seg
+            return f"POINT ({x1 + (x2 - x1) * t:.3f} {y1 + (y2 - y1) * t:.3f})"
+        remaining -= seg
+    x, y = pts[-1]
+    return f"POINT ({x:.3f} {y:.3f})"
+
+
 def write_geopackage(path, manholes, pipes, measurements) -> Path:
     """Create (overwrite) a GeoPackage with manholes, pipes, measurements."""
     path = Path(path)

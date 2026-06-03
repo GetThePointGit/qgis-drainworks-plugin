@@ -12,7 +12,7 @@
     <AAG><gml:Point xmlns:gml="http://www.opengis.net/gml"><gml:pos>100030.000 400000.000</gml:pos></gml:Point></AAG>
     <ABF>2024-06-15</ABF>
     <ACA>A</ACA>
-    <ACB>0.300</ACB>
+    <ACB>300</ACB>
     <ACD>PVC</ACD>
     <ACR>-2.500</ACR>
     <ACS>-2.600</ACS>
