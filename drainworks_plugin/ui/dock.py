@@ -6,6 +6,7 @@ delete button), and the embedded pyqtgraph side-view. It also owns the
 trajectory state and draws the route + lettered markers on the canvas.
 """
 
+import math
 import os
 import string
 
@@ -14,6 +15,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDockWidget,
     QHBoxLayout,
     QLabel,
@@ -39,6 +41,13 @@ def _icon(name):
     return QIcon(os.path.join(ICONS, name))
 
 
+def _flooded_area(point):
+    """Flooded cross-section area (m²) of a measurement point (circular pipe)."""
+    pct = point.get("flooded_pct") or 0.0
+    diameter = (point["obb"] - point["bob"])
+    return pct * math.pi * (diameter / 2.0) ** 2
+
+
 class DrainworksDock(QDockWidget):
     """Main control panel; docked on the right."""
 
@@ -56,6 +65,7 @@ class DrainworksDock(QDockWidget):
         self.pipes_by_code = {}
         self.pipe_geoms = {}
         self.manhole_points = {}
+        self.measurements_by_pipe = {}
         self.waypoints = []
         self.sinks = set()
         self.map_tool = None
@@ -85,6 +95,13 @@ class DrainworksDock(QDockWidget):
         actions.addStretch()
         left_layout.addLayout(actions)
 
+        self.chk_correct = QCheckBox("Corrigeer BOB-metingen")
+        self.chk_correct.setToolTip(
+            "Corrigeer de hoogte van gemeten punten op basis van de BOB van begin "
+            "en eind van de leiding (verwijdert drift in hellingmetingen)."
+        )
+        left_layout.addWidget(self.chk_correct)
+
         left_layout.addWidget(QLabel("Sinks (uitstroompunten):"))
         sink_row = QHBoxLayout()
         self.sink_combo = ExtendedCombo()
@@ -112,13 +129,23 @@ class DrainworksDock(QDockWidget):
         self.table.setColumnWidth(2, 70)
         self.table.setColumnWidth(3, 30)
         left_layout.addWidget(self.table, 1)
+        clear_traj = QPushButton("Wis traject")
+        clear_traj.setToolTip("Verwijder alle gekozen punten")
+        clear_traj.clicked.connect(self._on_reset)
+        left_layout.addWidget(clear_traj)
         left.setMaximumWidth(340)
 
         # --- Right: longitudinal profile. ---
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(4, 4, 4, 4)
-        right_layout.addWidget(QLabel("Langsprofiel:"))
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Langsprofiel:"))
+        header.addStretch()
+        self.volume_label = QLabel("")
+        self.volume_label.setStyleSheet("color: #2c7fb8; font-weight: bold;")
+        header.addWidget(self.volume_label)
+        right_layout.addLayout(header)
         self.side_view = SideViewWidget()
         right_layout.addWidget(self.side_view, 1)
 
@@ -151,6 +178,7 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.io.geopackage_store import (
             read_manhole_points,
             read_manholes,
+            read_measurements,
             read_pipes,
         )
         from drainworks_plugin.trajectory.graphics import TrajectoryGraphics
@@ -164,6 +192,7 @@ class DrainworksDock(QDockWidget):
         self.pipes_by_code = {p.code: p for p in pipes}
         self.network = SewerNetwork(pipes)
         self.manhole_points = read_manhole_points(self.gpkg_path)
+        self.measurements_by_pipe = read_measurements(self.gpkg_path)
         self.pipe_geoms = {f["code"]: f.geometry() for f in pipe_layer.getFeatures()}
 
         # Sink combo + existing sinks.
@@ -187,7 +216,13 @@ class DrainworksDock(QDockWidget):
         if not self.sinks:
             self.iface.messageBar().pushWarning("Drainworks", "Kies eerst minimaal één sink.")
             return
-        self.plugin.on_compute_loss()
+        self.plugin.on_compute_loss(correct_bob=self.chk_correct.isChecked())
+        # Reload the freshly computed measurements (with water levels) and redraw.
+        from drainworks_plugin.io.geopackage_store import read_measurements
+
+        if self.gpkg_path:
+            self.measurements_by_pipe = read_measurements(self.gpkg_path)
+        self._rebuild()
 
     def _on_traj_toggled(self, checked):
         from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
@@ -302,15 +337,43 @@ class DrainworksDock(QDockWidget):
     def _update_side_view(self):
         if self.network is None or len(self.waypoints) < 2:
             self.side_view.clear()
+            self.volume_label.setText("")
             return
         try:
             route = self.network.route(self.waypoints)
         except ValueError as exc:
             self.iface.messageBar().pushWarning("Drainworks", str(exc))
             self.side_view.clear()
+            self.volume_label.setText("")
             return
-        profile = build_profile(route, self.pipes_by_code, {})
+        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe)
         self.side_view.show_profile(profile)
+        self._update_volume(route)
+
+    def _update_volume(self, route):
+        """Show the lost-storage volume integrated along the route."""
+        volume = self._route_lost_volume(route)
+        if volume is None:
+            self.volume_label.setText("")
+        else:
+            self.volume_label.setText(f"Verloren berging: {volume:.2f} m³")
+
+    def _route_lost_volume(self, route):
+        """Integrate flooded cross-section area over the route (m³), or None."""
+        any_flood = False
+        total = 0.0
+        for code in route.pipe_codes:
+            points = self.measurements_by_pipe.get(code) or []
+            for a, b in zip(points, points[1:]):
+                seg = b["dist"] - a["dist"]
+                if seg <= 0:
+                    continue
+                area_a = _flooded_area(a)
+                area_b = _flooded_area(b)
+                if a.get("flooded_pct") is not None or b.get("flooded_pct") is not None:
+                    any_flood = True
+                total += 0.5 * (area_a + area_b) * seg
+        return total if any_flood else None
 
     # ------------------------------------------------------------ teardown
     def deactivate_tool(self):

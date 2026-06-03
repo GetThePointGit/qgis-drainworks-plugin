@@ -41,40 +41,61 @@ def _diameter(pipe) -> float:
     return pipe.diameter if pipe.diameter is not None else 0.0
 
 
-def build_profile(path, pipes: dict, observations_by_pipe: dict) -> Profile:
+def build_profile(path, pipes: dict, measurements_by_pipe=None,
+                  observations_by_pipe=None) -> Profile:
     """Build a Profile from a network Path.
 
     Parameters
     ----------
     path : drainworks_plugin.trajectory.network.Path
     pipes : dict[str, rgs_ribx.Pipe]
-    observations_by_pipe : dict[str, list[rgs_ribx.Observation]]
+    measurements_by_pipe : dict[str, list[dict]] or None
+        Measured points per pipe (``dist``, ``bob``, ``obb`` and optional
+        ``water_level``). When a pipe has these, the profile follows the measured
+        invert (the doorzakking) and carries the water level; otherwise it uses
+        the straight ``bob1`` → ``bob2`` line.
+    observations_by_pipe : dict[str, list[rgs_ribx.Observation]] or None
         Observations keyed by pipe code; each has ``distance`` from the pipe's
         own start node.
     """
+    measurements_by_pipe = measurements_by_pipe or {}
+    observations_by_pipe = observations_by_pipe or {}
     profile = Profile()
     cumulative = 0.0
 
     for pipe_code, from_node in zip(path.pipe_codes, path.manholes):
         pipe = pipes[pipe_code]
-        # Orient the pipe so that it starts at ``from_node``.
-        if pipe.manhole1 == from_node:
-            start_bob, end_bob = pipe.bob1, pipe.bob2
-            forward = True
-        else:
-            start_bob, end_bob = pipe.bob2, pipe.bob1
-            forward = False
+        forward = pipe.manhole1 == from_node
         length = pipe.length if pipe.length is not None else 0.0
         diam = _diameter(pipe)
         span_start = cumulative
         span_end = cumulative + length
 
-        profile.vertices.append(
-            ProfileVertex(dist=span_start, bob=start_bob, obb=start_bob + diam)
-        )
-        profile.vertices.append(
-            ProfileVertex(dist=span_end, bob=end_bob, obb=end_bob + diam)
-        )
+        measured = measurements_by_pipe.get(pipe_code)
+        if measured:
+            # Follow the measured invert (with water level), oriented along travel.
+            ordered = sorted(measured, key=lambda m: m["dist"], reverse=not forward)
+            for m in ordered:
+                along = m["dist"] if forward else (length - m["dist"])
+                profile.vertices.append(
+                    ProfileVertex(
+                        dist=span_start + along,
+                        bob=m["bob"],
+                        obb=m["obb"],
+                        water_level=m.get("water_level"),
+                    )
+                )
+        else:
+            start_bob = pipe.bob1 if forward else pipe.bob2
+            end_bob = pipe.bob2 if forward else pipe.bob1
+            if start_bob is not None:
+                profile.vertices.append(
+                    ProfileVertex(dist=span_start, bob=start_bob, obb=start_bob + diam)
+                )
+            if end_bob is not None:
+                profile.vertices.append(
+                    ProfileVertex(dist=span_end, bob=end_bob, obb=end_bob + diam)
+                )
         profile.pipe_spans.append((pipe_code, span_start, span_end))
 
         for obs in observations_by_pipe.get(pipe_code, []):
