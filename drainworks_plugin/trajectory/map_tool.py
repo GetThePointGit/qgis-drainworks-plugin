@@ -12,12 +12,13 @@ from qgis.PyQt.QtCore import Qt
 class TrajectoryMapTool(QgsMapTool):
     """Pick manholes on the canvas; delegate handling to callbacks."""
 
-    def __init__(self, canvas, manhole_layer, on_pick, on_reset):
+    def __init__(self, canvas, manhole_layer, on_pick, on_reset, on_move=None):
         super().__init__(canvas)
         self.canvas = canvas
         self.manhole_layer = manhole_layer
         self.on_pick = on_pick
         self.on_reset = on_reset
+        self.on_move = on_move
 
     def canvasReleaseEvent(self, event):  # noqa: N802 (Qt override)
         if event.button() == Qt.RightButton:
@@ -27,6 +28,10 @@ class TrajectoryMapTool(QgsMapTool):
         code = self._nearest_manhole_code(point)
         if code is not None:
             self.on_pick(code)
+
+    def canvasMoveEvent(self, event):  # noqa: N802 (Qt override)
+        if self.on_move is not None:
+            self.on_move(self.toMapCoordinates(event.pos()))
 
     def _nearest_manhole_code(self, point: QgsPointXY):
         """Return the code of the nearest manhole feature to ``point``."""

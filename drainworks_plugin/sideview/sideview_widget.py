@@ -47,6 +47,14 @@ class SideViewWidget(QWidget):
         self._cursor.show()
         self.hovered.emit(float(x))
 
+    def set_cursor(self, dist):
+        """Show/move the vertical cursor at ``dist`` (or hide when None)."""
+        if dist is None:
+            self._cursor.hide()
+        else:
+            self._cursor.setPos(float(dist))
+            self._cursor.show()
+
     def clear(self) -> None:
         self.plot.clear()
         self._cursor.hide()
@@ -85,6 +93,16 @@ class SideViewWidget(QWidget):
             self.plot.addItem(fill)
             self.plot.plot(dists, water, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine),
                            name="Waterpeil")
+
+        # Manholes as vertical grey lines with the put code at the top.
+        for dist, code in getattr(profile, "manholes", []):
+            line = pg.InfiniteLine(
+                pos=dist, angle=90,
+                pen=pg.mkPen("#398a39", width=1),
+                label=code, labelOpts={"position": 0.08, "color": "#398a39",
+                                       "rotateAxis": (1, 0)},
+            )
+            self.plot.addItem(line)
 
         # Observation markers as vertical dotted lines with labels.
         for marker in profile.observations:

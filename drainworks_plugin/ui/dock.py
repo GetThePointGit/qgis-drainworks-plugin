@@ -307,7 +307,8 @@ class DrainworksDock(QDockWidget):
         canvas = self.iface.mapCanvas()
         if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
-        self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset)
+        self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
+                                          on_move=self._on_map_hover)
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
@@ -369,10 +370,74 @@ class DrainworksDock(QDockWidget):
 
     # -------------------------------------------------------- trajectory
     def _on_pick(self, code):
-        if self.waypoints and self.waypoints[-1] == code:
-            return
-        self.waypoints.append(code)
+        self._insert_waypoint(code)
         self._rebuild()
+
+    def _insert_waypoint(self, code):
+        """Insert a put at the cheapest position: a tussenpunt mid-route, or
+        extend at an end, whichever adds the least route length."""
+        wps = self.waypoints
+        if code in wps:
+            return
+        if len(wps) < 2:
+            wps.append(code)
+            return
+
+        def leg(a, b):
+            try:
+                return self.network.shortest_path(a, b).total_length
+            except ValueError:
+                return float("inf")
+
+        # Default: append at the end.
+        best_cost = leg(wps[-1], code)
+        best_pos = len(wps)
+        # Prepend at the start.
+        cost = leg(code, wps[0])
+        if cost < best_cost:
+            best_cost, best_pos = cost, 0
+        # Insert between two existing waypoints.
+        for i in range(len(wps) - 1):
+            cost = leg(wps[i], code) + leg(code, wps[i + 1]) - leg(wps[i], wps[i + 1])
+            if cost < best_cost:
+                best_cost, best_pos = cost, i + 1
+        wps.insert(best_pos, code)
+
+    def _on_map_hover(self, point):
+        """Highlight the nearest put and drive the graph cursor from the route."""
+        if self.graphics is None:
+            return
+        mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+        px, py = point.x(), point.y()
+        # Nearest manhole within ~18 px -> highlight (the pick target).
+        tol = mupp * 18
+        nearest = None
+        for xy in self.manhole_points.values():
+            d = ((xy[0] - px) ** 2 + (xy[1] - py) ** 2) ** 0.5
+            if d <= tol:
+                tol, nearest = d, xy
+        self.graphics.set_hover(QgsPointXY(*nearest) if nearest else None)
+        # Reverse hover: project onto the route -> show the graph cursor.
+        if self.route_polyline:
+            dist, offset = self._project_on_route(px, py)
+            self.side_view.set_cursor(dist if offset <= mupp * 14 else None)
+        else:
+            self.side_view.set_cursor(None)
+
+    def _project_on_route(self, px, py):
+        """Return (cumulative_dist, perpendicular_offset) of the nearest route point."""
+        best_dist, best_off = 0.0, float("inf")
+        for (c0, p0), (c1, p1) in zip(self.route_polyline, self.route_polyline[1:]):
+            ax, ay, bx, by = p0.x(), p0.y(), p1.x(), p1.y()
+            dx, dy = bx - ax, by - ay
+            seg2 = dx * dx + dy * dy
+            t = 0.0 if seg2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg2))
+            projx, projy = ax + dx * t, ay + dy * t
+            off = ((px - projx) ** 2 + (py - projy) ** 2) ** 0.5
+            if off < best_off:
+                best_off = off
+                best_dist = c0 + (c1 - c0) * t
+        return best_dist, best_off
 
     def _on_reset(self):
         self.waypoints = []

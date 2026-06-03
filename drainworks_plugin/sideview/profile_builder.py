@@ -36,6 +36,7 @@ class Profile:
     observations: list = field(default_factory=list)
     pipe_spans: list = field(default_factory=list)  # (pipe_code, start_dist, end_dist)
     ideal: list = field(default_factory=list)       # (dist, bob) straight bob1->bob2 line
+    manholes: list = field(default_factory=list)    # (dist, manhole_code) along the route
 
 
 def _diameter(pipe) -> float:
@@ -70,6 +71,7 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
         length = pipe.length if pipe.length is not None else 0.0
         diam = _diameter(pipe)
         span_start = cumulative
+        profile.manholes.append((span_start, from_node))
         span_end = cumulative + length
 
         measured = measurements_by_pipe.get(pipe_code)
@@ -121,5 +123,9 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
             )
 
         cumulative = span_end
+
+    # Final manhole at the end of the route.
+    if path.manholes:
+        profile.manholes.append((cumulative, path.manholes[-1]))
 
     return profile
