@@ -43,12 +43,15 @@ class ImportDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Drainworks — import sewer data")
         self.input_path = QLineEdit()
+        self.meas_path = QLineEdit()
         self.output_path = QLineEdit()
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("RIBX or GeoPackage to import:"))
+        layout.addWidget(QLabel("Bestand (RIBX / .rib / GeoPackage):"))
         layout.addLayout(self._row(self.input_path, self._browse_input))
-        layout.addWidget(QLabel("Target GeoPackage (created/overwritten):"))
+        layout.addWidget(QLabel("Meetbestand (.hel / .rmb, alleen bij .rib — optioneel):"))
+        layout.addLayout(self._row(self.meas_path, self._browse_meas))
+        layout.addWidget(QLabel("Doel-GeoPackage (wordt aangemaakt/overschreven):"))
         layout.addLayout(self._row(self.output_path, self._browse_output))
 
         self.correct_bob = QCheckBox("Corrigeer BOB-metingen")
@@ -79,7 +82,8 @@ class ImportDialog(QDialog):
     def _browse_input(self):
         start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select RIBX or GeoPackage", start_dir, "Sewer data (*.ribx *.xml *.gpkg)"
+            self, "Selecteer bestand", start_dir,
+            "Rioolgegevens (*.ribx *.xml *.rib *.hel *.gpkg)",
         )
         if path:
             self.input_path.setText(path)
@@ -87,6 +91,16 @@ class ImportDialog(QDialog):
             if not self.output_path.text():
                 base = os.path.splitext(path)[0]
                 self.output_path.setText(base + ".gpkg")
+
+    def _browse_meas(self):
+        start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
+        if not start_dir and self.input_path.text():
+            start_dir = os.path.dirname(self.input_path.text())
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Selecteer meetbestand", start_dir, "Meetbestand (*.hel *.rmb)"
+        )
+        if path:
+            self.meas_path.setText(path)
 
     def _browse_output(self):
         # Prefer the remembered target dir; fall back to the chosen input's dir.
@@ -99,5 +113,6 @@ class ImportDialog(QDialog):
             _remember_dir(SETTINGS_TARGET_DIR, path)
 
     def values(self):
-        """Return (input_path, output_gpkg_path, correct_bob)."""
-        return self.input_path.text(), self.output_path.text(), self.correct_bob.isChecked()
+        """Return (input_path, measurement_path, output_gpkg_path, correct_bob)."""
+        return (self.input_path.text(), self.meas_path.text(),
+                self.output_path.text(), self.correct_bob.isChecked())
