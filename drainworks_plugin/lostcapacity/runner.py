@@ -1,4 +1,14 @@
-"""Compute lost capacity from a GeoPackage and write results back to it."""
+"""Compute lost capacity from a GeoPackage and write the results back.
+
+For every pipe we build a longitudinal profile of measurement points:
+- if the pipe has measured points (inclination/doorzakking), use those;
+- otherwise fall back to the pipe's BOB line, sampled at a few points.
+
+The flood-fill then assigns a water level + flooded fraction to each point, and
+the whole ``measurements`` layer is rebuilt (with a map point per sample,
+interpolated along the pipe) so the result is always visible — independent of
+the chosen sink.
+"""
 
 from collections import defaultdict
 
@@ -6,11 +16,19 @@ from osgeo import ogr
 
 import rgs_ribx
 
-from drainworks_plugin.io.geopackage_store import read_manholes, read_pipes
+from drainworks_plugin.io.geopackage_store import (
+    MeasurementRow,
+    read_manholes,
+    read_pipes,
+    replace_measurements,
+)
+
+# Number of segments to sample a measurement-less pipe into (BOB fallback).
+BOB_SAMPLES = 5
 
 
 def _read_measurement_profiles(gpkg_path) -> dict:
-    """Read interior measurement points per pipe into MeasurementPoint objects."""
+    """Read measured points per pipe into MeasurementPoint objects."""
     ds = ogr.Open(str(gpkg_path))
     layer = ds.GetLayerByName("measurements")
     profiles = defaultdict(list)
@@ -27,41 +45,81 @@ def _read_measurement_profiles(gpkg_path) -> dict:
     return profiles
 
 
-def compute_and_store(gpkg_path) -> int:
-    """Run lost-capacity and update the ``measurements`` layer in place.
+def _bob_profile(pipe):
+    """Synthesize a profile along a pipe's straight BOB line (no measurements)."""
+    if pipe.bob1 is None or pipe.bob2 is None:
+        return []
+    length = pipe.length or 0.0
+    diam = pipe.diameter or 0.0
+    points = []
+    for i in range(BOB_SAMPLES + 1):
+        frac = i / BOB_SAMPLES
+        dist = length * frac
+        bob = pipe.bob1 + (pipe.bob2 - pipe.bob1) * frac
+        points.append(rgs_ribx.MeasurementPoint(dist=dist, bob=bob, obb=bob + diam))
+    return points
 
-    Returns the number of measurement rows updated.
-    """
+
+def _point_along_wkt(wkt, dist):
+    """Interpolate the (WKT) point at ``dist`` metres along a WKT LINESTRING."""
+    if not wkt or "LINESTRING" not in wkt.upper():
+        return None
+    try:
+        inside = wkt[wkt.index("(") + 1: wkt.rindex(")")]
+    except ValueError:
+        return None
+    pts = []
+    for part in inside.split(","):
+        xy = part.split()
+        if len(xy) >= 2:
+            pts.append((float(xy[0]), float(xy[1])))
+    if len(pts) < 2:
+        return None
+    remaining = max(0.0, dist)
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        seg = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        if seg == 0:
+            continue
+        if remaining <= seg:
+            t = remaining / seg
+            return f"POINT ({x1 + (x2 - x1) * t:.3f} {y1 + (y2 - y1) * t:.3f})"
+        remaining -= seg
+    x, y = pts[-1]
+    return f"POINT ({x:.3f} {y:.3f})"
+
+
+def compute_and_store(gpkg_path) -> int:
+    """Run lost-capacity and rebuild the ``measurements`` layer. Returns point count."""
     manholes = {m.code: m for m in read_manholes(gpkg_path)}
     pipes = {p.code: p for p in read_pipes(gpkg_path)}
-    profiles = _read_measurement_profiles(gpkg_path)
+    measured = _read_measurement_profiles(gpkg_path)
+
+    # Build a profile for every pipe: measured points if present, else BOB line.
+    profiles = {}
+    for code, pipe in pipes.items():
+        if measured.get(code):
+            profiles[code] = measured[code]
+        else:
+            bob_points = _bob_profile(pipe)
+            if bob_points:
+                profiles[code] = bob_points
 
     rgs_ribx.compute_lost_capacity(manholes, pipes, profiles)
 
-    # Write results back. Match rows by (pipe_code, dist).
-    results = {}
-    for pipe_code, points in profiles.items():
+    rows = []
+    for code, points in profiles.items():
+        pipe = pipes[code]
         for mp in points:
-            results[(pipe_code, round(mp.dist, 6))] = mp
-
-    ds = ogr.Open(str(gpkg_path), update=1)
-    layer = ds.GetLayerByName("measurements")
-    updated = 0
-    layer.ResetReading()
-    for feat in layer:
-        key = (feat.GetField("pipe_code"), round(feat.GetField("dist"), 6))
-        mp = results.get(key)
-        if mp is None:
-            continue
-        if mp.water_level is None:
-            feat.SetFieldNull("water_level")
-        else:
-            feat.SetField("water_level", mp.water_level)
-        if mp.flooded_pct is None:
-            feat.SetFieldNull("flooded_pct")
-        else:
-            feat.SetField("flooded_pct", float(mp.flooded_pct))
-        layer.SetFeature(feat)
-        updated += 1
-    ds = None
-    return updated
+            rows.append(
+                MeasurementRow(
+                    pipe_code=code,
+                    dist=mp.dist,
+                    bob=mp.bob,
+                    obb=mp.obb,
+                    water_level=mp.water_level,
+                    flooded_pct=(float(mp.flooded_pct) if mp.flooded_pct is not None else None),
+                    geometry_wkt=_point_along_wkt(pipe.geometry_wkt, mp.dist),
+                )
+            )
+    replace_measurements(gpkg_path, rows)
+    return len(rows)

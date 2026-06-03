@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Generate an example GeoPackage: 10 manholes in a 5x2 grid for routing tests.
+"""Generate an example GeoPackage of manholes in a grid for routing/berging tests.
 
-Manholes P01..P10 sit on a 5-column, 2-row grid (EPSG:28992, 40 m spacing) and
-are connected horizontally and vertically by pipes, so the network has loops and
-multiple shortest-path options. The inverts slope down to the lowest corner
-(P10), which is flagged as the sink. One pipe is given a sagging interior
-profile so "verloren berging" has something to show.
+Manholes sit on a COLS x ROWS grid (EPSG:28992) connected horizontally and
+vertically, so the network has loops and multiple shortest paths. Two terrains:
+
+- default slope: inverts fall to the far corner (the sink); the first pipe gets
+  a measured sag so "verloren berging" has something to show.
+- ``--basin``: a gentle plane plus a central depression, so water pools in the
+  basin (lost storage) even without measured points — exercising the BOB
+  fallback. No measurements are written.
 
 Run with the QGIS-LTR2 Python and the PROJ/GDAL env (so EPSG:28992 resolves):
 
@@ -14,13 +17,16 @@ Run with the QGIS-LTR2 Python and the PROJ/GDAL env (so EPSG:28992 resolves):
     export PROJ_DATA="$PROJ_LIB"
     export GDAL_DATA="/Applications/QGIS-LTR2.app/Contents/Resources/gdal"
     export PYTHONPATH="$PWD:$HOME/Documents/GitHub/rgs-ribx/src"
-    "$QGIS_PY" scripts/make_example_grid.py
+    "$QGIS_PY" scripts/make_example_grid.py                       # small 5x2
+    "$QGIS_PY" scripts/make_example_grid.py --cols 12 --rows 8 --basin \
+        --out example/grid_large.gpkg
 """
 
+import argparse
+import math
 import os
 import sys
 
-# Make the plugin package + rgs_ribx importable when run directly.
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, REPO)
@@ -31,35 +37,34 @@ from rgs_ribx.model.geometry import wkt_linestring_length
 
 from drainworks_plugin.io.geopackage_store import MeasurementRow, write_geopackage
 
-COLS, ROWS = 5, 2
-X0, Y0, STEP = 100000.0, 400000.0, 40.0
+X0, Y0 = 100000.0, 400000.0
 DIAMETER = 0.3
 
 
-def code(col, row):
-    return f"P{row * COLS + col + 1:02d}"
+def code(col, row, cols):
+    return f"P{row * cols + col + 1:02d}"
 
 
-def position(col, row):
-    return (X0 + col * STEP, Y0 + row * STEP)
+def invert(col, row, cols, rows, basin):
+    if not basin:
+        return -2.0 - (col * 0.20 + row * 0.10)
+    plane = -2.0 - 0.04 * col - 0.03 * row
+    cx, cy = (cols - 1) * 0.45, (rows - 1) * 0.5
+    sx, sy = max(cols / 4.0, 1.0), max(rows / 4.0, 1.0)
+    gauss = math.exp(-(((col - cx) / sx) ** 2 + ((row - cy) / sy) ** 2))
+    return plane - 0.8 * gauss
 
 
-def invert(col, row):
-    # Slope down towards the far corner (col=4, row=1) so P10 is the low point.
-    return -2.0 - (col * 0.20 + row * 0.10)
-
-
-def build():
+def build(cols, rows, spacing, basin):
+    coords, inverts = {}, {}
     manholes = []
-    coords = {}
-    inverts = {}
-    sink_code = code(COLS - 1, ROWS - 1)  # P10
-    for row in range(ROWS):
-        for col in range(COLS):
-            c = code(col, row)
-            x, y = position(col, row)
+    sink_code = code(cols - 1, rows - 1, cols)
+    for row in range(rows):
+        for col in range(cols):
+            c = code(col, row, cols)
+            x, y = X0 + col * spacing, Y0 + row * spacing
             coords[c] = (x, y)
-            inverts[c] = invert(col, row)
+            inverts[c] = invert(col, row, cols, rows, basin)
             manholes.append(
                 rgs_ribx.Manhole(
                     code=c,
@@ -71,57 +76,53 @@ def build():
             )
 
     pipes = []
-    n = 0
 
     def add_pipe(a, b):
-        nonlocal n
-        n += 1
         (xa, ya), (xb, yb) = coords[a], coords[b]
         wkt = f"LINESTRING ({xa:.3f} {ya:.3f}, {xb:.3f} {yb:.3f})"
         pipes.append(
             rgs_ribx.Pipe(
-                code=f"L{n:02d}",
-                manhole1=a,
-                manhole2=b,
-                geometry_wkt=wkt,
-                shape="A",
-                diameter=DIAMETER,
-                bob1=inverts[a],
-                bob2=inverts[b],
+                code=f"L{len(pipes) + 1:03d}", manhole1=a, manhole2=b, geometry_wkt=wkt,
+                shape="A", diameter=DIAMETER, bob1=inverts[a], bob2=inverts[b],
                 length=wkt_linestring_length(wkt),
             )
         )
-        return pipes[-1]
 
-    # Horizontal connections.
-    for row in range(ROWS):
-        for col in range(COLS - 1):
-            add_pipe(code(col, row), code(col + 1, row))
-    # Vertical connections.
-    for col in range(COLS):
-        for row in range(ROWS - 1):
-            add_pipe(code(col, row), code(col, row + 1))
+    for row in range(rows):
+        for col in range(cols - 1):
+            add_pipe(code(col, row, cols), code(col + 1, row, cols))
+    for col in range(cols):
+        for row in range(rows - 1):
+            add_pipe(code(col, row, cols), code(col, row + 1, cols))
 
-    # Give the first horizontal pipe (L01) a sagging interior profile so the
-    # midpoint floods (verloren berging > 0).
-    dip_pipe = pipes[0]
-    b1, b2 = dip_pipe.bob1, dip_pipe.bob2
-    measurements = [
-        MeasurementRow(pipe_code=dip_pipe.code, dist=10.0, bob=min(b1, b2) - 0.10, obb=min(b1, b2) - 0.10 + DIAMETER),
-        MeasurementRow(pipe_code=dip_pipe.code, dist=20.0, bob=min(b1, b2) - 0.18, obb=min(b1, b2) - 0.18 + DIAMETER),
-        MeasurementRow(pipe_code=dip_pipe.code, dist=30.0, bob=min(b1, b2) - 0.10, obb=min(b1, b2) - 0.10 + DIAMETER),
-    ]
+    measurements = []
+    if not basin:
+        dip = pipes[0]
+        low = min(dip.bob1, dip.bob2)
+        measurements = [
+            MeasurementRow(pipe_code=dip.code, dist=10.0, bob=low - 0.10, obb=low - 0.10 + DIAMETER),
+            MeasurementRow(pipe_code=dip.code, dist=20.0, bob=low - 0.18, obb=low - 0.18 + DIAMETER),
+            MeasurementRow(pipe_code=dip.code, dist=30.0, bob=low - 0.10, obb=low - 0.10 + DIAMETER),
+        ]
     return manholes, pipes, measurements, sink_code
 
 
 def main():
-    manholes, pipes, measurements, sink_code = build()
-    out = os.path.join(REPO, "example", "grid10.gpkg")
+    parser = argparse.ArgumentParser(description="Generate a grid example GeoPackage.")
+    parser.add_argument("--cols", type=int, default=5)
+    parser.add_argument("--rows", type=int, default=2)
+    parser.add_argument("--spacing", type=float, default=40.0)
+    parser.add_argument("--basin", action="store_true", help="central depression (pooling)")
+    parser.add_argument("--out", default=os.path.join(REPO, "example", "grid10.gpkg"))
+    args = parser.parse_args()
+
+    manholes, pipes, measurements, sink_code = build(args.cols, args.rows, args.spacing, args.basin)
+    out = args.out if os.path.isabs(args.out) else os.path.join(REPO, args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     write_geopackage(out, manholes, pipes, measurements)
     print(f"Wrote {out}")
     print(f"  {len(manholes)} manholes (sink: {sink_code}), {len(pipes)} pipes, "
-          f"{len(measurements)} measurement points on {pipes[0].code}")
+          f"{len(measurements)} measured points, terrain={'basin' if args.basin else 'slope'}")
 
 
 if __name__ == "__main__":

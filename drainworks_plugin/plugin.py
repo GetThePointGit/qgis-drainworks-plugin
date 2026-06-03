@@ -29,7 +29,7 @@ class DrainworksPlugin:
         from drainworks_plugin.ui.dock import DrainworksDock
 
         self.dock = DrainworksDock(self)
-        self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dock)
+        self.iface.addDockWidget(Qt.BottomDockWidgetArea, self.dock)
         self.dock.hide()
 
         self.toolbar = self.iface.addToolBar("Drainworks")

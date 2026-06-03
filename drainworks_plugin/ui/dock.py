@@ -18,6 +18,7 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -64,55 +65,70 @@ class DrainworksDock(QDockWidget):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
-        container = QWidget()
-        layout = QVBoxLayout(container)
+        # Bottom dock: narrow controls on the left, longitudinal profile on the
+        # right, split so the user can drag the divider.
+        splitter = QSplitter(Qt.Horizontal)
 
-        # Action buttons.
+        # --- Left column: controls (kept narrow). ---
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(4, 4, 4, 4)
+
         actions = QHBoxLayout()
         self.btn_import = self._tool_button("Importeren", "import.svg", self._on_import)
         self.btn_traj = self._tool_button("Traject", "trajectory.svg", self._on_traj_toggled,
                                           checkable=True)
-        self.btn_loss = self._tool_button("Verloren berging", "lost_capacity.svg", self._on_loss)
+        self.btn_loss = self._tool_button("Berging", "lost_capacity.svg", self._on_loss)
         actions.addWidget(self.btn_import)
         actions.addWidget(self.btn_traj)
         actions.addWidget(self.btn_loss)
         actions.addStretch()
-        layout.addLayout(actions)
+        left_layout.addLayout(actions)
 
-        # Sink selector.
-        layout.addWidget(QLabel("Sinks (uitstroompunten):"))
+        left_layout.addWidget(QLabel("Sinks (uitstroompunten):"))
         sink_row = QHBoxLayout()
         self.sink_combo = ExtendedCombo()
-        add_sink = QPushButton(_icon("sink.svg"), "Toevoegen")
+        add_sink = QToolButton()
+        add_sink.setIcon(_icon("sink.svg"))
+        add_sink.setToolTip("Voeg de geselecteerde put toe als sink")
         add_sink.clicked.connect(self._on_add_sink)
         clear_sink = QPushButton("Wis")
         clear_sink.clicked.connect(self._on_clear_sinks)
         sink_row.addWidget(self.sink_combo, 1)
         sink_row.addWidget(add_sink)
         sink_row.addWidget(clear_sink)
-        layout.addLayout(sink_row)
+        left_layout.addLayout(sink_row)
         self.sink_label = QLabel("geen sinks gekozen")
         self.sink_label.setStyleSheet("color: #666;")
-        layout.addWidget(self.sink_label)
+        self.sink_label.setWordWrap(True)
+        left_layout.addWidget(self.sink_label)
 
-        # Trajectory table.
-        layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
+        left_layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", "Put", "Afstand (m)", ""])
+        self.table.setHorizontalHeaderLabels(["", "Put", "Afst. (m)", ""])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
-        self.table.setColumnWidth(0, 28)
-        self.table.setColumnWidth(2, 90)
-        self.table.setColumnWidth(3, 32)
-        self.table.setMaximumHeight(160)
-        layout.addWidget(self.table)
+        self.table.setColumnWidth(0, 24)
+        self.table.setColumnWidth(2, 70)
+        self.table.setColumnWidth(3, 30)
+        left_layout.addWidget(self.table, 1)
+        left.setMaximumWidth(340)
 
-        # Side-view.
-        layout.addWidget(QLabel("Langsprofiel:"))
+        # --- Right: longitudinal profile. ---
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        right_layout.addWidget(QLabel("Langsprofiel:"))
         self.side_view = SideViewWidget()
-        layout.addWidget(self.side_view, 1)
+        right_layout.addWidget(self.side_view, 1)
 
-        self.setWidget(container)
+        splitter.addWidget(left)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([320, 760])
+
+        self.setWidget(splitter)
         self._set_data_enabled(False)
 
     def _tool_button(self, text, icon_name, slot, checkable=False):
