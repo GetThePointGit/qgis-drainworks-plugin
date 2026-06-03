@@ -603,3 +603,10 @@ class DrainworksDock(QDockWidget):
     def clear_graphics(self):
         if self.graphics is not None:
             self.graphics.clear()
+
+    def teardown(self):
+        """Release the map tool and remove all canvas items (for plugin unload)."""
+        self.deactivate_tool()
+        if self.graphics is not None:
+            self.graphics.destroy()
+            self.graphics = None

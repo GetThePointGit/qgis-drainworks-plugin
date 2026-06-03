@@ -50,12 +50,18 @@ class DrainworksPlugin:
     def unload(self):
         """Remove the dock, toolbar and menu entry. Called on unload."""
         if self.dock is not None:
-            self.dock.deactivate_tool()
-            self.dock.clear_graphics()
+            try:
+                self.dock.visibilityChanged.disconnect(self._on_dock_visibility)
+            except (TypeError, RuntimeError):
+                pass
+            self.dock.teardown()
             self.iface.removeDockWidget(self.dock)
+            self.dock.setParent(None)
+            self.dock.deleteLater()
             self.dock = None
         if self.action is not None:
             self.iface.removePluginMenu(self.menu, self.action)
+            self.action = None
         if self.toolbar is not None:
             del self.toolbar
             self.toolbar = None
