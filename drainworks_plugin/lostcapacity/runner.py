@@ -88,8 +88,13 @@ def _point_along_wkt(wkt, dist):
     return f"POINT ({x:.3f} {y:.3f})"
 
 
-def compute_and_store(gpkg_path) -> int:
-    """Run lost-capacity and rebuild the ``measurements`` layer. Returns point count."""
+def compute_and_store(gpkg_path, correct_bob=False) -> int:
+    """Run lost-capacity and rebuild the ``measurements`` layer. Returns point count.
+
+    When ``correct_bob`` is True, measured profiles are de-trended onto the
+    pipe's known BOBs (removes inclination-measurement drift) before computing.
+    The BOB fallback is already the ideal line, so it is never corrected.
+    """
     manholes = {m.code: m for m in read_manholes(gpkg_path)}
     pipes = {p.code: p for p in read_pipes(gpkg_path)}
     measured = _read_measurement_profiles(gpkg_path)
@@ -98,7 +103,10 @@ def compute_and_store(gpkg_path) -> int:
     profiles = {}
     for code, pipe in pipes.items():
         if measured.get(code):
-            profiles[code] = measured[code]
+            points = measured[code]
+            if correct_bob and pipe.bob1 is not None and pipe.bob2 is not None:
+                rgs_ribx.correct_profile_to_bobs(points, pipe.bob1, pipe.bob2, pipe.length)
+            profiles[code] = points
         else:
             bob_points = _bob_profile(pipe)
             if bob_points:

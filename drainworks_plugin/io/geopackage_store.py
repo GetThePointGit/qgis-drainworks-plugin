@@ -233,6 +233,34 @@ def set_sinks(path, sink_codes) -> int:
     return flagged
 
 
+def read_measurements(path) -> dict:
+    """Return {pipe_code: [dict(dist, bob, obb, water_level, flooded_pct)]}.
+
+    Sorted by distance per pipe. Used to draw the measured profile + water level
+    in the side-view and to total the lost storage along a trajectory.
+    """
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("measurements")
+    grouped = {}
+    if layer is None:
+        return grouped
+    for feat in layer:
+        grouped.setdefault(feat.GetField("pipe_code"), []).append(
+            {
+                "dist": feat.GetField("dist"),
+                "bob": feat.GetField("bob"),
+                "obb": feat.GetField("obb"),
+                "water_level": (None if feat.IsFieldNull("water_level")
+                                else feat.GetField("water_level")),
+                "flooded_pct": (None if feat.IsFieldNull("flooded_pct")
+                                else feat.GetField("flooded_pct")),
+            }
+        )
+    for points in grouped.values():
+        points.sort(key=lambda m: m["dist"])
+    return grouped
+
+
 def read_manhole_points(path):
     """Return {code: (x, y)} for all manholes with a point geometry."""
     ds = ogr.Open(str(path))

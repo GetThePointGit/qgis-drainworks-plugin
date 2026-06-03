@@ -122,7 +122,7 @@ class DrainworksPlugin:
         canvas.setExtent(extent)
         canvas.refresh()
 
-    def on_compute_loss(self):
+    def on_compute_loss(self, correct_bob=False):
         """Compute lost capacity and load the styled measurements layer."""
         if self.gpkg_path is None:
             self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
@@ -134,7 +134,7 @@ class DrainworksPlugin:
         from drainworks_plugin.styling.symbology import style_measurements_by_flooded
 
         try:
-            n = compute_and_store(self.gpkg_path)
+            n = compute_and_store(self.gpkg_path, correct_bob=correct_bob)
         except Exception as exc:
             self.iface.messageBar().pushCritical("Drainworks", f"Computation failed: {exc}")
             return
