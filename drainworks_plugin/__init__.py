@@ -27,6 +27,12 @@ def _add_to_path(directory) -> bool:
 
 def _ensure_dependencies() -> None:
     """Make vendored/sibling dependencies importable when QGIS doesn't provide them."""
+    # Plugin Reloader reloads this plugin's own modules but leaves rgs_ribx cached
+    # in sys.modules, so edits to the library would be ignored until QGIS restarts.
+    # Drop the cached package (and submodules) so the latest version is re-imported.
+    for name in [m for m in list(sys.modules) if m == "rgs_ribx" or m.startswith("rgs_ribx.")]:
+        del sys.modules[name]
+
     # pyqtgraph: required by the side-view panel; vendored in external/.
     try:
         import pyqtgraph  # noqa: F401
