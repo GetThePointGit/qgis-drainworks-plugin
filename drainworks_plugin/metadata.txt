@@ -10,4 +10,4 @@ tracker=https://github.com/GetThePoint/qgis-drainworks-plugin/issues
 repository=https://github.com/GetThePoint/qgis-drainworks-plugin
 experimental=True
 deprecated=False
-icon=resources/icon.svg
+icon=resources/logo.png
