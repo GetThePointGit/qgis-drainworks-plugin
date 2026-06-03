@@ -14,17 +14,26 @@ from drainworks_plugin.io.geopackage_store import (
 
 
 def import_ribx(ribx_path, gpkg_path, correct_bob=False):
-    """Parse a RIBX file, write a GeoPackage, and load its layers.
+    """Parse a RIBX file, write a GeoPackage, and load its layers."""
+    return _store_and_load(rgs_ribx.build_from_ribx(ribx_path), gpkg_path, correct_bob)
 
-    The measured longitudinal profile (from BXA inclination observations) is
-    written to the ``measurements`` layer. With ``correct_bob`` the profile is
-    de-trended onto the pipe's known BOBs at import time.
 
-    Returns
-    -------
-    (manhole_layer, pipe_layer, group) : (QgsVectorLayer, QgsVectorLayer, QgsLayerTreeGroup)
+def import_sufrib(network_path, measurement_path, gpkg_path, correct_bob=False):
+    """Parse classic SUFRIB files (.rib + .hel/.rmb), write a GeoPackage, load it.
+
+    ``measurement_path`` may be None (network only). Returns the same tuple as
+    :func:`import_ribx`.
     """
-    result = rgs_ribx.build_from_ribx(ribx_path)
+    paths = [network_path] + ([measurement_path] if measurement_path else [])
+    return _store_and_load(rgs_ribx.build_from_sufrib(paths), gpkg_path, correct_bob)
+
+
+def _store_and_load(result, gpkg_path, correct_bob):
+    """Write a BuildResult (manholes/pipes + measured profile) to gpkg and load it.
+
+    With ``correct_bob`` the measured profile is de-trended onto the pipe's known
+    BOBs at import time. Returns (manhole_layer, pipe_layer, group).
+    """
     pipes_by_code = {p.code: p for p in result.pipes}
     rows = []
     for code, points in (result.measurements or {}).items():

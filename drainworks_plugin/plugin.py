@@ -73,6 +73,7 @@ class DrainworksPlugin:
 
         from drainworks_plugin.io.import_controller import (
             import_ribx,
+            import_sufrib,
             load_geopackage_layers,
         )
         from drainworks_plugin.ui.import_dialog import ImportDialog
@@ -80,12 +81,17 @@ class DrainworksPlugin:
         dialog = ImportDialog(self.iface.mainWindow())
         if dialog.exec_() != QDialog.Accepted:
             return
-        input_path, gpkg_path, correct_bob = dialog.values()
+        input_path, meas_path, gpkg_path, correct_bob = dialog.values()
         if not input_path:
             return
+        lower = input_path.lower()
         try:
-            if input_path.lower().endswith(".gpkg"):
+            if lower.endswith(".gpkg"):
                 manhole_layer, pipe_layer, group = load_geopackage_layers(input_path)
+            elif lower.endswith((".rib", ".hel")):
+                manhole_layer, pipe_layer, group = import_sufrib(
+                    input_path, meas_path or None, gpkg_path, correct_bob=correct_bob
+                )
             else:
                 manhole_layer, pipe_layer, group = import_ribx(
                     input_path, gpkg_path, correct_bob=correct_bob
