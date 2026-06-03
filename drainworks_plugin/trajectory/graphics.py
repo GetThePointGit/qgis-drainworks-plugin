@@ -24,6 +24,11 @@ class LabeledMarker(QgsVertexMarker):
         self.setColor(QColor(MARKER_COLOR))
         self.setFillColor(QColor(255, 255, 255))
 
+    def boundingRect(self):  # noqa: N802 (Qt override)
+        # The base rect only covers the icon; the label is drawn beyond it. Without
+        # widening the bounds, Qt clips/leaves stale text on partial repaints.
+        return super().boundingRect().adjusted(-2, -24, 42, 6)
+
     def paint(self, painter):  # noqa: N802 (Qt override)
         super().paint(painter)
         painter.save()
@@ -48,6 +53,10 @@ class TrajectoryGraphics:
         self.markers = []
         self.sink_markers = []
 
+    def _redraw(self):
+        """Force an immediate repaint of the canvas overlay (markers/rubber bands)."""
+        self.canvas.scene().update()
+
     def set_markers(self, labelled_points):
         """labelled_points: iterable of (label, QgsPointXY)."""
         self.clear_markers()
@@ -55,6 +64,7 @@ class TrajectoryGraphics:
             marker = LabeledMarker(self.canvas, label)
             marker.setCenter(point)
             self.markers.append(marker)
+        self._redraw()
 
     def set_route(self, geometries):
         """Draw the route from a list of QgsGeometry line segments."""
@@ -62,6 +72,7 @@ class TrajectoryGraphics:
         for geom in geometries:
             if geom is not None and not geom.isEmpty():
                 self.route_band.addGeometry(geom, None)
+        self._redraw()
 
     def set_sink_markers(self, points):
         """points: iterable of QgsPointXY for the chosen sink manholes."""
@@ -77,6 +88,7 @@ class TrajectoryGraphics:
             marker.setPenWidth(3)
             marker.setCenter(point)
             self.sink_markers.append(marker)
+        self._redraw()
 
     def clear_markers(self):
         for marker in self.markers:
@@ -89,3 +101,4 @@ class TrajectoryGraphics:
             self.canvas.scene().removeItem(marker)
         self.sink_markers = []
         self.route_band.reset(QgsWkbTypes.LineGeometry)
+        self._redraw()
