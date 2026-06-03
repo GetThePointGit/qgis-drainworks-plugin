@@ -24,12 +24,41 @@ class SewerNetwork:
     def __init__(self, pipes) -> None:
         # node -> list of (neighbor, pipe_code, weight)
         self._adj = defaultdict(list)
+        # node -> list of (neighbor, near_bob, far_bob) for downstream tracing
+        self._bob_adj = defaultdict(list)
         for pipe in pipes:
             weight = pipe.length if pipe.length is not None else 1.0
             if weight <= 0:
                 weight = 1.0
             self._adj[pipe.manhole1].append((pipe.manhole2, pipe.code, weight))
             self._adj[pipe.manhole2].append((pipe.manhole1, pipe.code, weight))
+            self._bob_adj[pipe.manhole1].append((pipe.manhole2, pipe.bob1, pipe.bob2))
+            self._bob_adj[pipe.manhole2].append((pipe.manhole1, pipe.bob2, pipe.bob1))
+
+    def downstream_path(self, start: str, max_steps=10000) -> list:
+        """Trace downstream from ``start``, always taking the lowest descending pipe.
+
+        At each manhole, follow the connected pipe whose far end has the lowest
+        BOB and lies below the current end (water flows down). Stops at a local
+        low point / outfall or when it would revisit a manhole. Returns the
+        ordered list of manhole codes (including ``start``).
+        """
+        path = [start]
+        visited = {start}
+        current = start
+        for _ in range(max_steps):
+            best = None  # (far_bob, neighbor)
+            for neighbor, near_bob, far_bob in self._bob_adj.get(current, []):
+                if neighbor in visited or near_bob is None or far_bob is None:
+                    continue
+                if far_bob < near_bob and (best is None or far_bob < best[0]):
+                    best = (far_bob, neighbor)
+            if best is None:
+                break
+            current = best[1]
+            visited.add(current)
+            path.append(current)
+        return path
 
     def shortest_path(self, start: str, end: str) -> Path:
         """Dijkstra shortest path from ``start`` to ``end`` manhole."""

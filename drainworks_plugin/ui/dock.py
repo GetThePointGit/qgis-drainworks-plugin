@@ -67,6 +67,7 @@ class DrainworksDock(QDockWidget):
         self.measurements_by_pipe = {}
         self.waypoints = []
         self.sinks = set()
+        self.computed_sinks = None  # sinks at the last berging computation
         self.map_tool = None
         self.graphics = None
 
@@ -87,10 +88,11 @@ class DrainworksDock(QDockWidget):
         self.btn_import = self._tool_button("Importeren", "import.svg", self._on_import)
         self.btn_traj = self._tool_button("Traject", "trajectory.svg", self._on_traj_toggled,
                                           checkable=True)
-        self.btn_loss = self._tool_button("Berging", "lost_capacity.svg", self._on_loss)
+        self.btn_downstream = self._tool_button("Stroomafw.", "trajectory.svg",
+                                                self._on_downstream)
         actions.addWidget(self.btn_import)
         actions.addWidget(self.btn_traj)
-        actions.addWidget(self.btn_loss)
+        actions.addWidget(self.btn_downstream)
         actions.addStretch()
         left_layout.addLayout(actions)
 
@@ -101,10 +103,9 @@ class DrainworksDock(QDockWidget):
         add_sink.setIcon(_icon("sink.svg"))
         add_sink.setToolTip("Voeg de geselecteerde put toe als sink")
         add_sink.clicked.connect(self._on_add_sink)
-        self.btn_sink_map = QToolButton()
-        self.btn_sink_map.setText("Kaart")
+        self.btn_sink_map = QPushButton("Kaart")
         self.btn_sink_map.setCheckable(True)
-        self.btn_sink_map.setToolTip("Kies sink-putten door ze op de kaart aan te klikken")
+        self.btn_sink_map.setToolTip("Kies een sink-put door deze op de kaart aan te klikken")
         self.btn_sink_map.clicked.connect(self._on_sink_map_toggled)
         clear_sink = QPushButton("Wis")
         clear_sink.clicked.connect(self._on_clear_sinks)
@@ -117,6 +118,10 @@ class DrainworksDock(QDockWidget):
         self.sink_label.setStyleSheet("color: #666;")
         self.sink_label.setWordWrap(True)
         left_layout.addWidget(self.sink_label)
+
+        self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken berging")
+        self.btn_loss.clicked.connect(self._on_loss)
+        left_layout.addWidget(self.btn_loss)
 
         left_layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
         self.table = QTableWidget(0, 4)
@@ -167,7 +172,8 @@ class DrainworksDock(QDockWidget):
         return button
 
     def _set_data_enabled(self, enabled):
-        for widget in (self.btn_traj, self.btn_loss, self.sink_combo, self.btn_sink_map):
+        for widget in (self.btn_traj, self.btn_downstream, self.btn_loss,
+                       self.sink_combo, self.btn_sink_map):
             widget.setEnabled(enabled)
 
     # --------------------------------------------------------------- data
@@ -198,7 +204,10 @@ class DrainworksDock(QDockWidget):
         self.sink_combo.clear()
         self.sink_combo.addItems(sorted(m.code for m in manholes))
         self.sinks = {m.code for m in manholes if m.is_sink}
+        # Treat the loaded sinks as the baseline (not stale until they change).
+        self.computed_sinks = set(self.sinks) if self.sinks else None
         self._update_sink_label()
+        self._update_berging_button()
 
         if self.graphics is None:
             self.graphics = TrajectoryGraphics(self.iface.mapCanvas())
@@ -215,12 +224,35 @@ class DrainworksDock(QDockWidget):
         if not self.sinks:
             self.iface.messageBar().pushWarning("Drainworks", "Kies eerst minimaal één sink.")
             return
-        self.plugin.on_compute_loss()
-        # Reload the freshly computed measurements (with water levels) and redraw.
-        from drainworks_plugin.io.geopackage_store import read_measurements
+        from drainworks_plugin.io.geopackage_store import read_measurements, set_sinks
 
+        # Persist the chosen sinks only now (at computation time), then compute.
+        if self.gpkg_path:
+            set_sinks(self.gpkg_path, self.sinks)
+        self.plugin.on_compute_loss()
+        self.computed_sinks = set(self.sinks)
         if self.gpkg_path:
             self.measurements_by_pipe = read_measurements(self.gpkg_path)
+        self._update_berging_button()
+        self._rebuild()
+
+    def _on_downstream(self):
+        """Extend the trajectory downstream from the last chosen put."""
+        if self.network is None:
+            return
+        if not self.waypoints:
+            self.iface.messageBar().pushInfo(
+                "Drainworks", "Kies eerst een startput (Traject) om stroomafwaarts te lopen."
+            )
+            return
+        path = self.network.downstream_path(self.waypoints[-1])
+        if len(path) < 2:
+            self.iface.messageBar().pushInfo(
+                "Drainworks", "Geen aflopende leiding gevonden vanaf deze put."
+            )
+            return
+        for code in path[1:]:
+            self.waypoints.append(code)
         self._rebuild()
 
     def _on_traj_toggled(self, checked):
@@ -259,6 +291,9 @@ class DrainworksDock(QDockWidget):
 
     def _on_sink_picked(self, code):
         self._add_sink(code)
+        # One-shot: turn the map-pick button off after each chosen sink.
+        self.btn_sink_map.setChecked(False)
+        self._clear_tool()
 
     def _add_sink(self, code):
         if code and code in self.manhole_points:
@@ -270,12 +305,22 @@ class DrainworksDock(QDockWidget):
         self._apply_sinks()
 
     def _apply_sinks(self):
-        from drainworks_plugin.io.geopackage_store import set_sinks
-
-        if self.gpkg_path:
-            set_sinks(self.gpkg_path, self.sinks)
+        # Sinks are persisted to the GeoPackage only when the berging is computed
+        # (see _on_loss), so changing them just updates the UI + staleness state.
         self._update_sink_label()
         self._update_sink_markers()
+        self._update_berging_button()
+
+    def _update_berging_button(self):
+        """Reflect whether the berging is up to date with the current sinks."""
+        if not hasattr(self, "btn_loss"):
+            return
+        if self.computed_sinks is not None and self.sinks != self.computed_sinks:
+            self.btn_loss.setText("Herbereken berging")
+            self.btn_loss.setStyleSheet("color: #c54141; font-weight: bold;")
+        else:
+            self.btn_loss.setText("Bereken berging")
+            self.btn_loss.setStyleSheet("")
 
     def _update_sink_markers(self):
         if self.graphics is None:

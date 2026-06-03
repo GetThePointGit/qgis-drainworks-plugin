@@ -35,6 +35,7 @@ class Profile:
     vertices: list = field(default_factory=list)
     observations: list = field(default_factory=list)
     pipe_spans: list = field(default_factory=list)  # (pipe_code, start_dist, end_dist)
+    ideal: list = field(default_factory=list)       # (dist, bob) straight bob1->bob2 line
 
 
 def _diameter(pipe) -> float:
@@ -96,6 +97,14 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
                 profile.vertices.append(
                     ProfileVertex(dist=span_end, bob=end_bob, obb=end_bob + diam)
                 )
+        # Straight BOB line of the pipe (bob1 -> bob2), oriented along travel, so
+        # the measured invert's fluctuation around it is visible.
+        if pipe.bob1 is not None and pipe.bob2 is not None:
+            ideal_start = pipe.bob1 if forward else pipe.bob2
+            ideal_end = pipe.bob2 if forward else pipe.bob1
+            profile.ideal.append((span_start, ideal_start))
+            profile.ideal.append((span_end, ideal_end))
+
         profile.pipe_spans.append((pipe_code, span_start, span_end))
 
         for obs in observations_by_pipe.get(pipe_code, []):

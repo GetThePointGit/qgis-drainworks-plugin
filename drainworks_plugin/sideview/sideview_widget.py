@@ -42,9 +42,20 @@ class SideViewWidget(QWidget):
         if not dists:
             return
 
-        # Crown (top of pipe) and invert (bottom of pipe).
+        # Straight pipe BOB line (bob1->bob2) so fluctuation of the measured
+        # invert around it is visible.
+        if profile.ideal:
+            self.plot.plot(
+                [d for d, _ in profile.ideal], [b for _, b in profile.ideal],
+                pen=pg.mkPen("#cc8400", width=1, style=Qt.DashLine), name="BOB leiding (recht)",
+            )
+
+        # Crown (top of pipe) and measured invert with a marker per point.
         self.plot.plot(dists, obbs, pen=pg.mkPen("#888888", width=1), name="Bovenkant buis")
-        self.plot.plot(dists, bobs, pen=pg.mkPen("#333333", width=2), name="BOB (bodem)")
+        self.plot.plot(
+            dists, bobs, pen=pg.mkPen("#333333", width=2), name="BOB gemeten",
+            symbol="o", symbolSize=4, symbolBrush="#333333", symbolPen=None,
+        )
 
         # Water-level fill (verloren berging) where water_level is set.
         water = [v.water_level if v.water_level is not None else v.bob for v in profile.vertices]
