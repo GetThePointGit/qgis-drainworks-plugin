@@ -6,18 +6,44 @@ from qgis.core import QgsProject, QgsVectorLayer
 
 import rgs_ribx
 
-from drainworks_plugin.io.geopackage_store import write_geopackage
+from drainworks_plugin.io.geopackage_store import (
+    MeasurementRow,
+    point_along_wkt,
+    write_geopackage,
+)
 
 
-def import_ribx(ribx_path, gpkg_path):
+def import_ribx(ribx_path, gpkg_path, correct_bob=False):
     """Parse a RIBX file, write a GeoPackage, and load its layers.
+
+    The measured longitudinal profile (from BXA inclination observations) is
+    written to the ``measurements`` layer. With ``correct_bob`` the profile is
+    de-trended onto the pipe's known BOBs at import time.
 
     Returns
     -------
     (manhole_layer, pipe_layer, group) : (QgsVectorLayer, QgsVectorLayer, QgsLayerTreeGroup)
     """
     result = rgs_ribx.build_from_ribx(ribx_path)
-    write_geopackage(gpkg_path, result.manholes, result.pipes, measurements=[])
+    pipes_by_code = {p.code: p for p in result.pipes}
+    rows = []
+    for code, points in (result.measurements or {}).items():
+        pipe = pipes_by_code.get(code)
+        if pipe is None:
+            continue
+        if correct_bob and pipe.bob1 is not None and pipe.bob2 is not None:
+            rgs_ribx.correct_profile_to_bobs(points, pipe.bob1, pipe.bob2, pipe.length)
+        for mp in points:
+            rows.append(
+                MeasurementRow(
+                    pipe_code=code,
+                    dist=mp.dist,
+                    bob=mp.bob,
+                    obb=mp.obb,
+                    geometry_wkt=point_along_wkt(pipe.geometry_wkt, mp.dist),
+                )
+            )
+    write_geopackage(gpkg_path, result.manholes, result.pipes, rows)
     return load_geopackage_layers(gpkg_path)
 
 

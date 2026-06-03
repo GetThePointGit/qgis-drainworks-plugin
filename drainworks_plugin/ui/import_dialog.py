@@ -9,6 +9,7 @@ import os
 
 from qgis.core import QgsSettings
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -50,6 +51,14 @@ class ImportDialog(QDialog):
         layout.addWidget(QLabel("Target GeoPackage (created/overwritten):"))
         layout.addLayout(self._row(self.output_path, self._browse_output))
 
+        self.correct_bob = QCheckBox("Corrigeer BOB-metingen")
+        self.correct_bob.setToolTip(
+            "Corrigeer de hoogte van de gemeten punten op basis van de BOB van begin "
+            "en eind van de leiding (verwijdert drift in hellingmetingen)."
+        )
+        self.correct_bob.setChecked(True)
+        layout.addWidget(self.correct_bob)
+
         buttons = QHBoxLayout()
         ok = QPushButton("Import")
         cancel = QPushButton("Cancel")
@@ -90,5 +99,5 @@ class ImportDialog(QDialog):
             _remember_dir(SETTINGS_TARGET_DIR, path)
 
     def values(self):
-        """Return (input_path, output_gpkg_path) as strings."""
-        return self.input_path.text(), self.output_path.text()
+        """Return (input_path, output_gpkg_path, correct_bob)."""
+        return self.input_path.text(), self.output_path.text(), self.correct_bob.isChecked()

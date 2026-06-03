@@ -74,14 +74,16 @@ class DrainworksPlugin:
         dialog = ImportDialog(self.iface.mainWindow())
         if dialog.exec_() != QDialog.Accepted:
             return
-        input_path, gpkg_path = dialog.values()
+        input_path, gpkg_path, correct_bob = dialog.values()
         if not input_path:
             return
         try:
             if input_path.lower().endswith(".gpkg"):
                 manhole_layer, pipe_layer, group = load_geopackage_layers(input_path)
             else:
-                manhole_layer, pipe_layer, group = import_ribx(input_path, gpkg_path)
+                manhole_layer, pipe_layer, group = import_ribx(
+                    input_path, gpkg_path, correct_bob=correct_bob
+                )
         except Exception as exc:  # surface to the user, don't crash QGIS
             self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
             return

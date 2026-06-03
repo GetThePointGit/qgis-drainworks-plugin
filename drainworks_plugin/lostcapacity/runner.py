@@ -18,6 +18,7 @@ import rgs_ribx
 
 from drainworks_plugin.io.geopackage_store import (
     MeasurementRow,
+    point_along_wkt,
     read_manholes,
     read_pipes,
     replace_measurements,
@@ -60,34 +61,6 @@ def _bob_profile(pipe):
     return points
 
 
-def _point_along_wkt(wkt, dist):
-    """Interpolate the (WKT) point at ``dist`` metres along a WKT LINESTRING."""
-    if not wkt or "LINESTRING" not in wkt.upper():
-        return None
-    try:
-        inside = wkt[wkt.index("(") + 1: wkt.rindex(")")]
-    except ValueError:
-        return None
-    pts = []
-    for part in inside.split(","):
-        xy = part.split()
-        if len(xy) >= 2:
-            pts.append((float(xy[0]), float(xy[1])))
-    if len(pts) < 2:
-        return None
-    remaining = max(0.0, dist)
-    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
-        seg = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        if seg == 0:
-            continue
-        if remaining <= seg:
-            t = remaining / seg
-            return f"POINT ({x1 + (x2 - x1) * t:.3f} {y1 + (y2 - y1) * t:.3f})"
-        remaining -= seg
-    x, y = pts[-1]
-    return f"POINT ({x:.3f} {y:.3f})"
-
-
 def compute_and_store(gpkg_path, correct_bob=False) -> int:
     """Run lost-capacity and rebuild the ``measurements`` layer. Returns point count.
 
@@ -126,7 +99,7 @@ def compute_and_store(gpkg_path, correct_bob=False) -> int:
                     obb=mp.obb,
                     water_level=mp.water_level,
                     flooded_pct=(float(mp.flooded_pct) if mp.flooded_pct is not None else None),
-                    geometry_wkt=_point_along_wkt(pipe.geometry_wkt, mp.dist),
+                    geometry_wkt=point_along_wkt(pipe.geometry_wkt, mp.dist),
                 )
             )
     replace_measurements(gpkg_path, rows)

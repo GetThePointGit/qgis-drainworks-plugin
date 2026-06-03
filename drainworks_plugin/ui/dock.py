@@ -15,7 +15,6 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
-    QCheckBox,
     QDockWidget,
     QHBoxLayout,
     QLabel,
@@ -94,13 +93,6 @@ class DrainworksDock(QDockWidget):
         actions.addWidget(self.btn_loss)
         actions.addStretch()
         left_layout.addLayout(actions)
-
-        self.chk_correct = QCheckBox("Corrigeer BOB-metingen")
-        self.chk_correct.setToolTip(
-            "Corrigeer de hoogte van gemeten punten op basis van de BOB van begin "
-            "en eind van de leiding (verwijdert drift in hellingmetingen)."
-        )
-        left_layout.addWidget(self.chk_correct)
 
         left_layout.addWidget(QLabel("Sinks (uitstroompunten):"))
         sink_row = QHBoxLayout()
@@ -216,7 +208,7 @@ class DrainworksDock(QDockWidget):
         if not self.sinks:
             self.iface.messageBar().pushWarning("Drainworks", "Kies eerst minimaal één sink.")
             return
-        self.plugin.on_compute_loss(correct_bob=self.chk_correct.isChecked())
+        self.plugin.on_compute_loss()
         # Reload the freshly computed measurements (with water levels) and redraw.
         from drainworks_plugin.io.geopackage_store import read_measurements
 
