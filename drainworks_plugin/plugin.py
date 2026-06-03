@@ -20,6 +20,7 @@ class DrainworksPlugin:
         self.toolbar = None
         self.manhole_layer = None
         self.pipe_layer = None
+        self.layer_group = None
         self.gpkg_path = None
         self.side_view = None
         self.map_tool = None
@@ -75,20 +76,49 @@ class DrainworksPlugin:
             return
         try:
             if input_path.lower().endswith(".gpkg"):
-                manhole_layer, pipe_layer = load_geopackage_layers(input_path)
+                manhole_layer, pipe_layer, group = load_geopackage_layers(input_path)
             else:
-                manhole_layer, pipe_layer = import_ribx(input_path, gpkg_path)
+                manhole_layer, pipe_layer, group = import_ribx(input_path, gpkg_path)
         except Exception as exc:  # surface to the user, don't crash QGIS
             self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
             return
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
+        self.layer_group = group
         self.gpkg_path = input_path if input_path.lower().endswith(".gpkg") else gpkg_path
+        self._zoom_to_layers([pipe_layer, manhole_layer])
         self.iface.messageBar().pushSuccess(
             "Drainworks",
             f"Imported {pipe_layer.featureCount()} pipes, "
             f"{manhole_layer.featureCount()} manholes.",
         )
+
+    def _zoom_to_layers(self, layers):
+        """Zoom the canvas to the combined extent of ``layers`` (CRS-aware)."""
+        from qgis.core import (
+            QgsCoordinateTransform,
+            QgsProject,
+            QgsRectangle,
+        )
+
+        extent = QgsRectangle()
+        extent.setMinimal()
+        project = QgsProject.instance()
+        dst_crs = project.crs()
+        for layer in layers:
+            if layer is None or layer.featureCount() == 0:
+                continue
+            layer_extent = layer.extent()
+            if layer.crs() != dst_crs:
+                xform = QgsCoordinateTransform(layer.crs(), dst_crs, project)
+                layer_extent = xform.transformBoundingBox(layer_extent)
+            extent.combineExtentWith(layer_extent)
+        if extent.isNull() or extent.isEmpty():
+            return
+        extent.scale(1.1)  # small margin around the network
+        canvas = self.iface.mapCanvas()
+        canvas.setExtent(extent)
+        canvas.refresh()
 
     def on_pick_trajectory(self):
         """Activate the trajectory map tool and ensure the side-view dock exists."""
@@ -122,8 +152,9 @@ class DrainworksPlugin:
         if self.gpkg_path is None:
             self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
             return
-        from qgis.core import QgsProject, QgsVectorLayer
+        from qgis.core import QgsVectorLayer
 
+        from drainworks_plugin.io.import_controller import add_layer_to_group
         from drainworks_plugin.lostcapacity.runner import compute_and_store
         from drainworks_plugin.styling.symbology import style_measurements_by_flooded
 
@@ -135,6 +166,6 @@ class DrainworksPlugin:
 
         layer = QgsVectorLayer(f"{self.gpkg_path}|layername=measurements", "Verloren berging", "ogr")
         if layer.isValid():
-            QgsProject.instance().addMapLayer(layer)
             style_measurements_by_flooded(layer)
+            add_layer_to_group(layer, self.layer_group, on_top=True)
         self.iface.messageBar().pushSuccess("Drainworks", f"Lost capacity computed for {n} points.")
