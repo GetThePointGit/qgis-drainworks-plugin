@@ -185,3 +185,7 @@ cython_debug/
 
 # Vendored pyqtgraph: keep the runtime package, drop its bundled examples
 drainworks_plugin/external/pyqtgraph/examples/
+
+# rgs_ribx in external/ is a dev symlink to the sibling checkout (live edits).
+# For distribution, run scripts/vendor_rgs_ribx.sh --copy and force-add it.
+drainworks_plugin/external/rgs_ribx
