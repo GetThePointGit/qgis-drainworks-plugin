@@ -52,6 +52,7 @@ class TrajectoryGraphics:
         self.route_band.setLineStyle(Qt.DashLine)
         self.markers = []
         self.sink_markers = []
+        self.hover_marker = None
 
     def _redraw(self):
         """Force an immediate repaint of the canvas overlay (markers/rubber bands)."""
@@ -90,6 +91,21 @@ class TrajectoryGraphics:
             self.sink_markers.append(marker)
         self._redraw()
 
+    def set_hover(self, point):
+        """Show a single marker at ``point`` (QgsPointXY), or hide if None."""
+        if self.hover_marker is None:
+            self.hover_marker = QgsVertexMarker(self.canvas)
+            self.hover_marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
+            self.hover_marker.setColor(QColor("#c54141"))
+            self.hover_marker.setIconSize(13)
+            self.hover_marker.setPenWidth(3)
+        if point is None:
+            self.hover_marker.hide()
+        else:
+            self.hover_marker.setCenter(point)
+            self.hover_marker.show()
+        self._redraw()
+
     def clear_markers(self):
         for marker in self.markers:
             self.canvas.scene().removeItem(marker)
@@ -100,5 +116,7 @@ class TrajectoryGraphics:
         for marker in self.sink_markers:
             self.canvas.scene().removeItem(marker)
         self.sink_markers = []
+        if self.hover_marker is not None:
+            self.hover_marker.hide()
         self.route_band.reset(QgsWkbTypes.LineGeometry)
         self._redraw()

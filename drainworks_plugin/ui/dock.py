@@ -65,6 +65,7 @@ class DrainworksDock(QDockWidget):
         self.pipe_geoms = {}
         self.manhole_points = {}
         self.measurements_by_pipe = {}
+        self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
         self.sinks = set()
         self.computed_sinks = None  # sinks at the last berging computation
@@ -150,6 +151,7 @@ class DrainworksDock(QDockWidget):
         header.addWidget(self.volume_label)
         right_layout.addLayout(header)
         self.side_view = SideViewWidget()
+        self.side_view.hovered.connect(self._on_graph_hover)
         right_layout.addWidget(self.side_view, 1)
 
         splitter.addWidget(left)
@@ -412,6 +414,7 @@ class DrainworksDock(QDockWidget):
         if self.network is None or len(self.waypoints) < 2:
             self.side_view.clear()
             self.volume_label.setText("")
+            self.route_polyline = []
             return
         try:
             route = self.network.route(self.waypoints)
@@ -419,10 +422,57 @@ class DrainworksDock(QDockWidget):
             self.iface.messageBar().pushWarning("Drainworks", str(exc))
             self.side_view.clear()
             self.volume_label.setText("")
+            self.route_polyline = []
             return
         profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe)
         self.side_view.show_profile(profile)
+        self.route_polyline = self._build_route_polyline(route)
         self._update_volume(route)
+
+    def _build_route_polyline(self, route):
+        """Return [(cumulative_dist, QgsPointXY)] along the oriented route geometry."""
+        poly = []
+        cumulative = 0.0
+        prev = None
+        for pipe_code, from_node in zip(route.pipe_codes, route.manholes):
+            geom = self.pipe_geoms.get(pipe_code)
+            pipe = self.pipes_by_code.get(pipe_code)
+            if geom is None or pipe is None:
+                continue
+            pts = geom.asPolyline()
+            if not pts:
+                continue
+            if pipe.manhole1 != from_node:
+                pts = list(reversed(pts))
+            for p in pts:
+                if prev is not None:
+                    cumulative += (((p.x() - prev.x()) ** 2 + (p.y() - prev.y()) ** 2) ** 0.5)
+                poly.append((cumulative, p))
+                prev = p
+        return poly
+
+    def _on_graph_hover(self, dist):
+        """Show the map point matching the cursor distance on the graph."""
+        if self.graphics is None:
+            return
+        if dist < 0 or not self.route_polyline:
+            self.graphics.set_hover(None)
+            return
+        self.graphics.set_hover(self._point_at_distance(dist))
+
+    def _point_at_distance(self, dist):
+        poly = self.route_polyline
+        if not poly:
+            return None
+        if dist <= poly[0][0]:
+            return poly[0][1]
+        for (c0, p0), (c1, p1) in zip(poly, poly[1:]):
+            if c0 <= dist <= c1:
+                seg = c1 - c0
+                t = 0.0 if seg == 0 else (dist - c0) / seg
+                return QgsPointXY(p0.x() + (p1.x() - p0.x()) * t,
+                                  p0.y() + (p1.y() - p0.y()) * t)
+        return poly[-1][1]
 
     def _update_volume(self, route):
         """Show the lost-storage volume integrated along the route."""

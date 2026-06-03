@@ -6,12 +6,16 @@ Embedded in the Drainworks dock.
 """
 
 import pyqtgraph as pg
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QVBoxLayout, QWidget
 
 
 class SideViewWidget(QWidget):
     """Plots a :class:`Profile` (from profile_builder.build_profile)."""
+
+    # Emitted with the distance (m) along the route under the cursor, or -1 when
+    # the cursor leaves the plot. The dock maps it to a point on the canvas.
+    hovered = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,8 +33,23 @@ class SideViewWidget(QWidget):
         self.plot.addLegend()
         layout.addWidget(self.plot)
 
+        self._cursor = pg.InfiniteLine(angle=90, pen=pg.mkPen("#c54141", width=1))
+        self._cursor.hide()
+        self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
+
+    def _on_mouse_moved(self, pos):
+        if not self.plot.sceneBoundingRect().contains(pos):
+            self._cursor.hide()
+            self.hovered.emit(-1.0)
+            return
+        x = self.plot.getViewBox().mapSceneToView(pos).x()
+        self._cursor.setPos(x)
+        self._cursor.show()
+        self.hovered.emit(float(x))
+
     def clear(self) -> None:
         self.plot.clear()
+        self._cursor.hide()
 
     def show_profile(self, profile) -> None:
         """Render a Profile."""
@@ -76,4 +95,7 @@ class SideViewWidget(QWidget):
             )
             self.plot.addItem(line)
 
+        # Re-add the hover cursor (plot.clear() removed it).
+        self._cursor.hide()
+        self.plot.addItem(self._cursor)
         self.plot.autoRange()
