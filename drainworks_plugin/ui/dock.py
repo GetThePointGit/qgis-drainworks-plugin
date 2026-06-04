@@ -297,6 +297,7 @@ class DrainworksDock(QDockWidget):
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
             self.active_task = None
+            self._refresh_step_buttons()  # re-enable so the user can retry
             return
         self.state.mark_enriched()
         s = task.result or {}
@@ -333,6 +334,7 @@ class DrainworksDock(QDockWidget):
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
             self.active_task = None
+            self._refresh_step_buttons()  # re-enable so the user can retry
             return
         self.state.mark_berging_computed()
         self.computed_sinks = set(self.sinks)
