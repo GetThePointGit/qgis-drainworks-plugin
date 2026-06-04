@@ -33,7 +33,6 @@ def load_pipeline_layers(gpkg_path):
     from drainworks_plugin.styling.symbology import (
         style_manholes,
         style_pipes,
-        style_profile,
         style_segments,
     )
 
@@ -55,18 +54,14 @@ def load_pipeline_layers(gpkg_path):
     group = root.insertGroup(0, gpkg_path.stem)
 
     segments_layer = QgsVectorLayer(f"{gpkg_path}|layername=segments", "Segmenten", "ogr")
-    profile_layer = QgsVectorLayer(f"{gpkg_path}|layername=profile", "Profielpunten", "ogr")
     if segments_layer.isValid():
         style_segments(segments_layer)
-    if profile_layer.isValid():
-        style_profile(profile_layer)
 
-    # Draw order top->bottom: manholes, pipes, segments, profile.
+    # Draw order top->bottom: manholes, pipes, segments. The profile points feed the
+    # side-view (read from the gpkg) and are intentionally not added to the map.
     ordered = [manhole_layer, pipe_layer]
     if segments_layer.isValid():
         ordered.append(segments_layer)
-    if profile_layer.isValid():
-        ordered.append(profile_layer)
     for layer in ordered:
         project.addMapLayer(layer, False)
         group.addLayer(layer)
