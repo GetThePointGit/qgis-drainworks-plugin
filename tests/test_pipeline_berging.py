@@ -35,3 +35,19 @@ def test_compute_berging_fast_runs(tmp_gpkg):
     _setup(tmp_gpkg)
     n = compute_berging(tmp_gpkg, resolution="fast")
     assert n == len(read_segments(tmp_gpkg))
+
+
+def test_accurate_writes_per_point_water_to_profile(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import read_profile
+    _setup(tmp_gpkg)
+    compute_berging(tmp_gpkg, resolution="accurate")
+    pts = read_profile(tmp_gpkg)["L1"]
+    assert any(p.water_level is not None for p in pts)
+
+
+def test_fast_leaves_profile_water_empty(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import read_profile
+    _setup(tmp_gpkg)
+    compute_berging(tmp_gpkg, resolution="fast")
+    pts = read_profile(tmp_gpkg)["L1"]
+    assert all(p.water_level is None for p in pts)

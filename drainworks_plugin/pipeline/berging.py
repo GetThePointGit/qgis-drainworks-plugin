@@ -87,6 +87,21 @@ def compute_berging(gpkg_path, resolution="accurate") -> int:
             profiles[code] = _endpoint_profile(pipe, segs_by_pipe[code])
     rgs_ribx.compute_lost_capacity(manholes, pipes, profiles)
 
+    # Accurate: persist the per-point water back to the profile layer so the
+    # side-view can show a water level per measurement point (fast does not).
+    if resolution == "accurate" and profile_pts:
+        from drainworks_plugin.io.geopackage_store import point_along_wkt, write_profile
+        rows = []
+        for code in profile_pts:
+            pipe = pipes.get(code)
+            wkt = pipe.geometry_wkt if pipe else None
+            for mp in profiles.get(code, []):
+                rows.append({
+                    "pipe_code": code, "dist": mp.dist, "bob": mp.bob, "obb": mp.obb,
+                    "water_level": mp.water_level, "flooded_pct": mp.flooded_pct,
+                    "geometry_wkt": point_along_wkt(wkt, mp.dist) if wkt else None})
+        write_profile(gpkg_path, rows)
+
     updates = {}
     for seg in segments:
         pts = profiles.get(seg["pipe_code"], [])
