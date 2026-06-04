@@ -1,0 +1,23 @@
+---
+title: "Drainworks"
+subtitle: "Gebruikershandleiding — QGIS-plugin voor rioolinspectie en verloren berging"
+author: "RoosGeo"
+date: "Versie 1.0.0"
+lang: nl
+# 'report' geeft \maketitle een eigen titelpagina (los van de inhoud).
+documentclass: report
+classoption:
+  - oneside
+toc: true
+toc-title: "Inhoud"
+numbersections: true
+colorlinks: true
+linkcolor: RoyalBlue
+urlcolor: RoyalBlue
+geometry: "margin=2.5cm"
+header-includes:
+  - \usepackage{graphicx}
+# Optionele omslagafbeelding: plaats screenshots/00-omslag.png en haal de
+# onderstaande regel uit commentaar om hem op de titelpagina te tonen.
+#  - \titlegraphic{\includegraphics[width=0.6\textwidth]{screenshots/00-omslag.png}}
+---

@@ -31,17 +31,23 @@ Met [pandoc](https://pandoc.org/) (+ een LaTeX-engine zoals `tectonic` of `xelat
 vanuit deze map:
 
 ```bash
-pandoc 00-overzicht.md 01-importeren.md 02-verrijken.md 03-verloren-berging.md \
+pandoc metadata.yaml \
+       00-overzicht.md 01-importeren.md 02-verrijken.md 03-verloren-berging.md \
        04-traject-en-zijaanzicht.md 05-opmaak.md 06-installatie-en-publicatie.md \
-       --toc --number-sections --resource-path=. \
-       -V geometry:margin=2.5cm -V lang=nl \
+       --pdf-engine=xelatex --resource-path=. \
        -o drainworks-handleiding.pdf
 ```
+
+`metadata.yaml` levert de **titelpagina** (titel, ondertitel, auteur, versie), de
+inhoudsopgave, genummerde secties en de marges — pas titel/auteur/versie daar aan. Wil je
+een omslagafbeelding, plaats dan `screenshots/00-omslag.png` en haal de `\titlegraphic`-
+regel in `metadata.yaml` uit commentaar. Geen `xelatex`? Gebruik `--pdf-engine=tectonic`.
 
 Alternatief (HTML → print naar PDF in de browser):
 
 ```bash
-pandoc *.md --toc --standalone --metadata title="Drainworks handleiding" -o handleiding.html
+pandoc metadata.yaml *.md --toc --standalone -o handleiding.html
 ```
 
-> 📷 **Screenshot:** *(optioneel) titelpagina/omslag.* `screenshots/00-omslag.png`
+> 📷 **Screenshot:** *(optioneel) omslagafbeelding voor de titelpagina.*
+> `screenshots/00-omslag.png`
