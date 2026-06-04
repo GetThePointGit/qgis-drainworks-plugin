@@ -56,6 +56,9 @@ class DrainworksDock(QDockWidget):
         self.pipe_geoms = {}
         self.manhole_points = {}
         self.measurements_by_pipe = {}
+        self._segments_by_pipe = {}     # cached; refreshed on load + after each step
+        self._last_hover_code = None    # avoid re-rendering the preview every pixel
+        self._canvas_move_connected = False
         self._manholes_by_code = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
@@ -351,6 +354,7 @@ class DrainworksDock(QDockWidget):
         self.network = SewerNetwork(pipes)
         self.manhole_points = read_manhole_points(self.gpkg_path)
         self.measurements_by_pipe = self._read_profile_for_sideview()
+        self._segments_by_pipe = self._read_segments_by_pipe()
         self.pipe_geoms = {f["code"]: f.geometry() for f in pipe_layer.getFeatures()}
 
         # Sink combo + existing sinks.
@@ -467,6 +471,7 @@ class DrainworksDock(QDockWidget):
             f"{s.get('n_warnings', 0)} waarschuwingen")
         self.plugin.reload_pipeline_layers()
         self._reload_profile()
+        self._segments_by_pipe = self._read_segments_by_pipe()
         self._refresh_step_buttons()
         self.active_task = None
         self.iface.messageBar().pushSuccess(
@@ -510,6 +515,7 @@ class DrainworksDock(QDockWidget):
         self.loss_total.setText(
             f"Totaal verloren berging: {total_lost_volume(self.gpkg_path):.2f} m³")
         self.plugin.reload_pipeline_layers()
+        self._segments_by_pipe = self._read_segments_by_pipe()
         self._refresh_step_buttons()
         self._rebuild()
         self.active_task = None
@@ -791,15 +797,11 @@ class DrainworksDock(QDockWidget):
             if d <= tol:
                 tol, nearest, nearest_code = d, xy, code
         self.graphics.set_hover(QgsPointXY(*nearest) if nearest else None)
-        # While building a trajectory, live-preview it from the BOB lines.
-        if self.btn_traj.isChecked():
+        # While building a trajectory, live-preview it — but only when the nearest put
+        # changes, so moving within/around the same put doesn't re-render.
+        if self.btn_traj.isChecked() and nearest_code != self._last_hover_code:
+            self._last_hover_code = nearest_code
             self._preview(nearest_code)
-        # Reverse hover: project onto the route -> show the graph cursor.
-        if self.route_polyline:
-            dist, offset = self._project_on_route(px, py)
-            self.side_view.set_cursor(dist if offset <= mupp * 14 else None)
-        else:
-            self.side_view.set_cursor(None)
 
     def _project_on_route(self, px, py):
         """Return (cumulative_dist, perpendicular_offset) of the nearest route point."""
@@ -889,8 +891,7 @@ class DrainworksDock(QDockWidget):
             self.volume_label.setText("")
             return
         from drainworks_plugin.sideview.berging import route_berging
-        segments_by_pipe = self._read_segments_by_pipe()
-        water, volume = route_berging(committed_route, self.pipes_by_code, segments_by_pipe)
+        water, volume = route_berging(committed_route, self.pipes_by_code, self._segments_by_pipe)
         # Accurate berging carries per-point water on the profile (show_profile draws
         # it); only draw the segment overlay when there is no per-point water (fast).
         if not any(v.water_level is not None for v in profile.vertices):
