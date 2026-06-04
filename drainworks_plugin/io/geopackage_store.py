@@ -356,7 +356,7 @@ def write_profile(path, rows) -> int:
     _replace_layer(ds, "profile")
     layer = ds.CreateLayer("profile", _srs(), ogr.wkbPoint)
     layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
-    for name in ("dist", "bob", "obb"):
+    for name in ("dist", "bob", "obb", "water_level", "flooded_pct"):
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
     defn = layer.GetLayerDefn()
     ds.StartTransaction()
@@ -366,6 +366,8 @@ def write_profile(path, rows) -> int:
         _set(feat, "dist", row.get("dist"))
         _set(feat, "bob", row.get("bob"))
         _set(feat, "obb", row.get("obb"))
+        _set(feat, "water_level", row.get("water_level"))
+        _set(feat, "flooded_pct", row.get("flooded_pct"))
         if row.get("geometry_wkt"):
             feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
         layer.CreateFeature(feat)
@@ -383,10 +385,21 @@ def read_profile(path) -> dict:
     if layer is None:
         return grouped
     for feat in layer:
-        grouped.setdefault(feat.GetField("pipe_code"), []).append(
-            rgs_ribx.MeasurementPoint(dist=feat.GetField("dist"),
-                                      bob=feat.GetField("bob"),
-                                      obb=feat.GetField("obb")))
+        def _opt(name):
+            try:
+                return None if feat.IsFieldNull(name) else feat.GetField(name)
+            except (RuntimeError, ValueError):
+                return None  # field absent on an old profile layer
+        mp = rgs_ribx.MeasurementPoint(dist=feat.GetField("dist"),
+                                       bob=feat.GetField("bob"),
+                                       obb=feat.GetField("obb"))
+        wl = _opt("water_level")
+        fp = _opt("flooded_pct")
+        if wl is not None:
+            mp.water_level = wl
+        if fp is not None:
+            mp.flooded_pct = fp
+        grouped.setdefault(feat.GetField("pipe_code"), []).append(mp)
     for points in grouped.values():
         points.sort(key=lambda p: p.dist)
     return grouped

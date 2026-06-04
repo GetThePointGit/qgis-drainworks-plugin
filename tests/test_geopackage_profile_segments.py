@@ -51,3 +51,13 @@ def test_segments_roundtrip_and_berging_update(tmp_gpkg):
     seg2 = read_segments(tmp_gpkg)[0]
     assert round(seg2["flooded_pct"], 2) == 0.4
     assert round(seg2["flooded_pct_max"], 2) == 0.6
+
+
+def test_profile_roundtrips_water_fields(tmp_gpkg):
+    _gpkg(tmp_gpkg)
+    rows = [{"pipe_code": "L1", "dist": 0.0, "bob": -2.0, "obb": -1.7,
+             "water_level": -1.9, "flooded_pct": 0.5, "geometry_wkt": "POINT (0 0)"}]
+    write_profile(tmp_gpkg, rows)
+    pt = read_profile(tmp_gpkg)["L1"][0]
+    assert pt.water_level == -1.9
+    assert pt.flooded_pct == 0.5
