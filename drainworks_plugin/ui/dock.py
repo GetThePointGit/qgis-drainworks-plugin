@@ -14,7 +14,6 @@ from qgis.core import QgsPointXY
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
-    QAbstractItemView,
     QDockWidget,
     QHBoxLayout,
     QLabel,
@@ -67,6 +66,8 @@ class DrainworksDock(QDockWidget):
         self.measurements_by_pipe = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
+        from drainworks_plugin.trajectory.history import WaypointHistory
+        self.history = WaypointHistory()
         self.sinks = set()
         self.computed_sinks = None  # sinks at the last berging computation
         from drainworks_plugin.pipeline.state import PipelineState
@@ -166,18 +167,25 @@ class DrainworksDock(QDockWidget):
         left_layout.addWidget(self.btn_loss)
 
         left_layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", "Put", "Afst. (m)", ""])
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setColumnWidth(0, 24)
-        self.table.setColumnWidth(2, 70)
-        self.table.setColumnWidth(3, 30)
-        left_layout.addWidget(self.table, 1)
-        clear_traj = QPushButton("Wis traject")
-        clear_traj.setToolTip("Verwijder alle gekozen punten")
-        clear_traj.clicked.connect(self._on_reset)
-        left_layout.addWidget(clear_traj)
+        self.traj_bar = QWidget()
+        traj_layout = QHBoxLayout(self.traj_bar)
+        traj_layout.setContentsMargins(0, 0, 0, 0)
+        self.btn_traj_downstream = QPushButton("Stroomafw.")
+        self.btn_traj_downstream.clicked.connect(self._on_downstream)
+        self.btn_traj_delmode = QPushButton("Verwijdermodus")
+        self.btn_traj_delmode.setCheckable(True)
+        self.btn_traj_clear = QPushButton("Wis")
+        self.btn_traj_clear.clicked.connect(self._on_reset)
+        self.btn_traj_undo = QPushButton("↶")
+        self.btn_traj_undo.clicked.connect(self._on_undo)
+        self.btn_traj_redo = QPushButton("↷")
+        self.btn_traj_redo.clicked.connect(self._on_redo)
+        for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
+                  self.btn_traj_undo, self.btn_traj_redo):
+            traj_layout.addWidget(b)
+        self.traj_bar.setVisible(False)
+        left_layout.addWidget(self.traj_bar)
+        left_layout.addStretch(1)
         left.setMaximumWidth(340)
 
         # --- Right: longitudinal profile. ---
@@ -402,13 +410,16 @@ class DrainworksDock(QDockWidget):
             return
         for code in path[1:]:
             self.waypoints.append(code)
-        self._rebuild()
+        self._commit_waypoints()
 
     def _on_traj_toggled(self, checked):
+        self.traj_bar.setVisible(checked)
         if checked:
-            self.btn_sink_map.setChecked(False)  # exclusive with sink-pick
+            self.btn_sink_map.setChecked(False)
             self._activate_tool(self._on_pick, self._on_reset)
+            self._sync_traj_buttons()
         else:
+            self.btn_traj_delmode.setChecked(False)
             self._clear_tool()
 
     def _on_sink_map_toggled(self, checked):
@@ -427,7 +438,8 @@ class DrainworksDock(QDockWidget):
         if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
         self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
-                                          on_move=self._on_map_hover)
+                                          on_move=self._on_map_hover,
+                                          on_ctrl_pick=self._on_ctrl_pick, on_drag=self._on_drag)
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
@@ -490,9 +502,43 @@ class DrainworksDock(QDockWidget):
             self.sink_label.setStyleSheet("color: #666;")
 
     # -------------------------------------------------------- trajectory
-    def _on_pick(self, code):
-        self._insert_waypoint(code)
+    def _commit_waypoints(self, push=True):
+        """Persist the current waypoints to history and rebuild everything."""
+        if push:
+            self.history.set(self.waypoints)
+        self._sync_traj_buttons()
         self._rebuild()
+
+    def _sync_traj_buttons(self):
+        self.btn_traj_undo.setEnabled(self.history.can_undo())
+        self.btn_traj_redo.setEnabled(self.history.can_redo())
+
+    def _on_undo(self):
+        self.waypoints = self.history.undo()
+        self._commit_waypoints(push=False)
+
+    def _on_redo(self):
+        self.waypoints = self.history.redo()
+        self._commit_waypoints(push=False)
+
+    def _on_ctrl_pick(self, code):
+        if code in self.waypoints:
+            self.waypoints.remove(code)
+            self._commit_waypoints()
+
+    def _on_drag(self, from_code, to_code):
+        if from_code in self.waypoints and to_code not in self.waypoints:
+            self.waypoints[self.waypoints.index(from_code)] = to_code
+            self._commit_waypoints()
+
+    def _on_pick(self, code):
+        if self.btn_traj_delmode.isChecked():
+            if code in self.waypoints:
+                self.waypoints.remove(code)
+                self._commit_waypoints()
+            return
+        self._insert_waypoint(code)
+        self._commit_waypoints()
 
     def _insert_waypoint(self, code):
         """Insert a put at the cheapest position: a tussenpunt mid-route, or
@@ -562,17 +608,10 @@ class DrainworksDock(QDockWidget):
 
     def _on_reset(self):
         self.waypoints = []
-        self._rebuild()
-
-    def _delete_waypoint(self, index):
-        if 0 <= index < len(self.waypoints):
-            del self.waypoints[index]
-            self._rebuild()
+        self._commit_waypoints()
 
     def _rebuild(self):
-        """Recompute route, refresh table, map graphics and side-view."""
-        cumulative = self._cumulative_distances()
-        self._update_table(cumulative)
+        """Recompute route, refresh map graphics and side-view."""
         self._update_graphics()
         self._update_side_view()
 
@@ -589,20 +628,6 @@ class DrainworksDock(QDockWidget):
                 total = float("nan")
             cumulative.append(total)
         return cumulative[: len(self.waypoints)]
-
-    def _update_table(self, cumulative):
-        self.table.setRowCount(len(self.waypoints))
-        for i, code in enumerate(self.waypoints):
-            letter = LETTERS[i] if i < len(LETTERS) else str(i + 1)
-            dist = cumulative[i] if i < len(cumulative) else float("nan")
-            dist_text = "—" if dist != dist else f"{dist:.0f}"  # NaN check
-            self.table.setItem(i, 0, QTableWidgetItem(letter))
-            self.table.setItem(i, 1, QTableWidgetItem(code))
-            self.table.setItem(i, 2, QTableWidgetItem(dist_text))
-            delete = QPushButton("✕")
-            delete.setFixedWidth(28)
-            delete.clicked.connect(lambda _checked, idx=i: self._delete_waypoint(idx))
-            self.table.setCellWidget(i, 3, delete)
 
     def _update_graphics(self):
         if self.graphics is None:
@@ -623,6 +648,12 @@ class DrainworksDock(QDockWidget):
             except ValueError:
                 geoms = []
         self.graphics.set_route(geoms)
+
+        if self.waypoints:
+            xy = self.manhole_points.get(self.waypoints[-1])
+            self.graphics.set_active(QgsPointXY(*xy) if xy else None)
+        else:
+            self.graphics.set_active(None)
 
     def _update_side_view(self):
         if self.network is None or len(self.waypoints) < 2:
