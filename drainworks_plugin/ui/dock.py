@@ -10,7 +10,7 @@ import os
 import string
 
 from qgis.core import QgsPointXY
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QDockWidget,
@@ -97,9 +97,9 @@ class DrainworksDock(QDockWidget):
         self.btn_traj.setToolTip("Stel een traject samen door putten op de kaart te klikken")
         self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
         self.btn_style.setToolTip("Pas de kaartopmaak van leidingen en putten aan")
-        self.btn_settings = self._tool_button("Instellingen", "lost_capacity.svg",
+        self.btn_settings = self._tool_button("Zijaanzicht", "gear.svg",
                                               self._on_sideview_settings)
-        self.btn_settings.setToolTip("Instellingen voor het langsprofiel")
+        self.btn_settings.setToolTip("Instellingen voor het zijaanzicht (langsprofiel)")
         for b in (self.btn_import, self.btn_traj, self.btn_style, self.btn_settings):
             actions.addWidget(b)
         actions.addStretch()
@@ -117,7 +117,9 @@ class DrainworksDock(QDockWidget):
         gear1 = QHBoxLayout()
         gear1.addStretch()
         self.btn_enrich_settings = QToolButton()
-        self.btn_enrich_settings.setText("⚙")
+        self.btn_enrich_settings.setIcon(_icon("gear.svg"))
+        self.btn_enrich_settings.setIconSize(QSize(20, 20))
+        self.btn_enrich_settings.setAutoRaise(True)
         self.btn_enrich_settings.setToolTip("Instellingen verrijken")
         self.btn_enrich_settings.clicked.connect(self._on_enrich_settings)
         gear1.addWidget(self.btn_enrich_settings)
@@ -141,7 +143,9 @@ class DrainworksDock(QDockWidget):
         gear2 = QHBoxLayout()
         gear2.addStretch()
         self.btn_loss_settings = QToolButton()
-        self.btn_loss_settings.setText("⚙")
+        self.btn_loss_settings.setIcon(_icon("gear.svg"))
+        self.btn_loss_settings.setIconSize(QSize(20, 20))
+        self.btn_loss_settings.setAutoRaise(True)
         self.btn_loss_settings.setToolTip("Instellingen verloren berging")
         self.btn_loss_settings.clicked.connect(self._on_loss_settings)
         gear2.addWidget(self.btn_loss_settings)
