@@ -148,6 +148,8 @@ def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
     layer.CreateField(ogr.FieldDefn("ground_level", ogr.OFTReal))   # maaiveld / putdeksel
     layer.CreateField(ogr.FieldDefn("bottom_level", ogr.OFTReal))   # bodemhoogte (laagste bob)
     layer.CreateField(ogr.FieldDefn("is_sink", ogr.OFTInteger))
+    layer.CreateField(ogr.FieldDefn("valid", ogr.OFTInteger))
+    layer.CreateField(ogr.FieldDefn("issues", ogr.OFTString))
     defn = layer.GetLayerDefn()
     for m in manholes:
         feat = ogr.Feature(defn)
@@ -165,12 +167,13 @@ def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
 def _write_pipes(ds, srs, pipes) -> None:
     layer = ds.CreateLayer("pipes", srs, ogr.wkbLineString)
     str_fields = ["code", "manhole1", "manhole2", "shape", "material",
-                  "sewerage_type", "inspection_date"]
+                  "sewerage_type", "inspection_date", "issues"]
     real_fields = ["diameter", "width", "bob1", "bob2", "length", "bob_avg", "slope"]
     for name in str_fields:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTString))
     for name in real_fields:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("valid", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
     for p in pipes:
         feat = ogr.Feature(defn)
@@ -388,3 +391,225 @@ def read_manhole_points(path):
         if geom is not None:
             points[feat.GetField("code")] = (geom.GetX(), geom.GetY())
     return points
+
+
+def _write_measurements_raw(ds, srs, raw_measurements) -> None:
+    """Write the un-integrated measurements as a geometry-less attribute table."""
+    layer = ds.CreateLayer("measurements_raw", srs, ogr.wkbNone)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("dist", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("value", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("mtype", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("reverse", ogr.OFTInteger))
+    defn = layer.GetLayerDefn()
+    for code, raw in (raw_measurements or {}).items():
+        for point in raw.points:
+            feat = ogr.Feature(defn)
+            _set(feat, "pipe_code", code)
+            _set(feat, "dist", point.get("dist"))
+            _set(feat, "value", point.get("value"))
+            _set(feat, "mtype", raw.measurement_type)
+            feat.SetField("reverse", 1 if raw.reverse else 0)
+            layer.CreateFeature(feat)
+            feat = None
+
+
+def write_base(path, manholes, pipes, raw_measurements) -> Path:
+    """Create (overwrite) the step-1 GeoPackage: manholes, pipes, measurements_raw.
+
+    No integrated heights, no segments, no validation — those are step 2.
+    """
+    path = Path(path)
+    if path.exists():
+        path.unlink()
+    driver = ogr.GetDriverByName("GPKG")
+    ds = driver.CreateDataSource(str(path))
+    srs = _srs()
+    bottom_levels = _manhole_bottom_levels(pipes)
+    ds.StartTransaction()
+    _write_manholes(ds, srs, manholes, bottom_levels)
+    _write_pipes(ds, srs, pipes)
+    _write_measurements_raw(ds, srs, raw_measurements)
+    ds.CommitTransaction()
+    ds = None
+    return path
+
+
+def read_raw_measurements(path) -> dict:
+    """Read ``measurements_raw`` back into ``{pipe_code: RawMeasurements}``."""
+    from rgs_ribx.model.raw import RawMeasurements
+
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("measurements_raw")
+    grouped = {}
+    meta = {}
+    if layer is None:
+        return grouped
+    for feat in layer:
+        code = feat.GetField("pipe_code")
+        grouped.setdefault(code, []).append(
+            {"dist": feat.GetField("dist"), "value": feat.GetField("value")})
+        if code not in meta:
+            meta[code] = (feat.GetField("mtype") or "", bool(feat.GetField("reverse")))
+    result = {}
+    for code, points in grouped.items():
+        mtype, reverse = meta[code]
+        result[code] = RawMeasurements(pipe_code=code, measurement_type=mtype,
+                                       reverse=reverse, points=points)
+    return result
+
+
+def _apply_issues(layer, issues_by_code) -> None:
+    """Set valid/issues on every feature of ``layer`` keyed by its ``code``."""
+    layer.ResetReading()
+    for feat in layer:
+        issues = issues_by_code.get(feat.GetField("code"), [])
+        feat.SetField("valid", 0 if issues else 1)
+        if issues:
+            feat.SetField("issues", "; ".join(issues))
+        else:
+            feat.SetFieldNull("issues")
+        layer.SetFeature(feat)
+
+
+def set_validation(path, validation) -> None:
+    """Write a ``validate_network`` result onto the pipes + manholes layers.
+
+    ``validation`` is ``{"pipes": {code: [issues]}, "manholes": {code: [issues]}}``.
+    """
+    ds = ogr.Open(str(path), update=1)
+    ds.StartTransaction()
+    _apply_issues(ds.GetLayerByName("pipes"), validation.get("pipes", {}))
+    _apply_issues(ds.GetLayerByName("manholes"), validation.get("manholes", {}))
+    ds.CommitTransaction()
+    ds = None
+
+
+SEGMENT_BERGING_FIELDS = ["water_level", "flooded_pct", "lost_volume",
+                          "flooded_length", "flooded_pct_max"]
+
+
+def _replace_layer(ds, name) -> None:
+    """Drop ``name`` if present (caller recreates it in the same datasource)."""
+    for i in range(ds.GetLayerCount()):
+        if ds.GetLayer(i).GetName() == name:
+            ds.DeleteLayer(i)
+            return
+
+
+def write_profile(path, rows) -> int:
+    """Create/replace the ``profile`` Point layer (detailed computed heights)."""
+    ds = ogr.Open(str(path), update=1)
+    _replace_layer(ds, "profile")
+    layer = ds.CreateLayer("profile", _srs(), ogr.wkbPoint)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    for name in ("dist", "bob", "obb"):
+        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for row in rows:
+        feat = ogr.Feature(defn)
+        _set(feat, "pipe_code", row.get("pipe_code"))
+        _set(feat, "dist", row.get("dist"))
+        _set(feat, "bob", row.get("bob"))
+        _set(feat, "obb", row.get("obb"))
+        if row.get("geometry_wkt"):
+            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
+        layer.CreateFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(rows)
+
+
+def read_profile(path) -> dict:
+    """Return ``{pipe_code: [MeasurementPoint]}`` from the ``profile`` layer."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("profile")
+    grouped = {}
+    if layer is None:
+        return grouped
+    for feat in layer:
+        grouped.setdefault(feat.GetField("pipe_code"), []).append(
+            rgs_ribx.MeasurementPoint(dist=feat.GetField("dist"),
+                                      bob=feat.GetField("bob"),
+                                      obb=feat.GetField("obb")))
+    for points in grouped.values():
+        points.sort(key=lambda p: p.dist)
+    return grouped
+
+
+def write_segments(path, rows) -> int:
+    """Create/replace the ``segments`` LineString layer (empty berging fields)."""
+    ds = ogr.Open(str(path), update=1)
+    _replace_layer(ds, "segments")
+    layer = ds.CreateLayer("segments", _srs(), ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("source", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("n_measurements", ogr.OFTInteger))
+    for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
+                 "bob_highest", "slope_avg", "diameter", *SEGMENT_BERGING_FIELDS):
+        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for row in rows:
+        feat = ogr.Feature(defn)
+        _set(feat, "pipe_code", row.get("pipe_code"))
+        _set(feat, "source", row.get("source"))
+        feat.SetField("n_measurements", int(row.get("n_measurements") or 0))
+        for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
+                     "bob_highest", "slope_avg", "diameter"):
+            _set(feat, name, row.get(name))
+        if row.get("geometry_wkt"):
+            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
+        layer.CreateFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(rows)
+
+
+def read_segments(path) -> list:
+    """Return the ``segments`` rows as dicts (including OGR ``fid``)."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("segments")
+    out = []
+    if layer is None:
+        return out
+    for feat in layer:
+        row = {
+            "fid": feat.GetFID(),
+            "pipe_code": feat.GetField("pipe_code"),
+            "source": feat.GetField("source"),
+            "n_measurements": feat.GetField("n_measurements"),
+            "dist_from": feat.GetField("dist_from"),
+            "dist_to": feat.GetField("dist_to"),
+            "length": feat.GetField("length"),
+            "bob_start": feat.GetField("bob_start"),
+            "bob_end": feat.GetField("bob_end"),
+            "bob_highest": feat.GetField("bob_highest"),
+            "slope_avg": feat.GetField("slope_avg"),
+            "diameter": feat.GetField("diameter"),
+        }
+        for name in SEGMENT_BERGING_FIELDS:
+            row[name] = feat.GetField(name)
+        out.append(row)
+    return out
+
+
+def update_segments_berging(path, by_fid) -> int:
+    """Set the berging fields on ``segments`` features keyed by OGR fid."""
+    ds = ogr.Open(str(path), update=1)
+    layer = ds.GetLayerByName("segments")
+    ds.StartTransaction()
+    for fid, values in by_fid.items():
+        feat = layer.GetFeature(fid)
+        if feat is None:
+            continue
+        for name in SEGMENT_BERGING_FIELDS:
+            _set(feat, name, values.get(name))
+        layer.SetFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(by_fid)
