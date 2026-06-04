@@ -95,7 +95,7 @@ class DrainworksDock(QDockWidget):
                                           checkable=True)
         self.btn_downstream = self._tool_button("Stroomafw.", "trajectory.svg",
                                                 self._on_downstream)
-        self.btn_style = self._tool_button("Opmaak", "lost_capacity.svg", self._on_style)
+        self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
         actions.addWidget(self.btn_import)
         actions.addWidget(self.btn_traj)
         actions.addWidget(self.btn_downstream)
@@ -137,24 +137,24 @@ class DrainworksDock(QDockWidget):
         sink_row = QHBoxLayout()
         self.sink_combo = ExtendedCombo()
         add_sink = QToolButton()
-        add_sink.setIcon(_icon("sink.svg"))
+        add_sink.setText("+")
         add_sink.setToolTip("Voeg de geselecteerde put toe als sink")
         add_sink.clicked.connect(self._on_add_sink)
         self.btn_sink_map = QPushButton("Kaart")
         self.btn_sink_map.setCheckable(True)
         self.btn_sink_map.setToolTip("Kies een sink-put door deze op de kaart aan te klikken")
         self.btn_sink_map.clicked.connect(self._on_sink_map_toggled)
-        clear_sink = QPushButton("Wis")
-        clear_sink.clicked.connect(self._on_clear_sinks)
         sink_row.addWidget(self.sink_combo, 1)
         sink_row.addWidget(add_sink)
         sink_row.addWidget(self.btn_sink_map)
-        sink_row.addWidget(clear_sink)
         left_layout.addLayout(sink_row)
-        self.sink_label = QLabel("geen sinks gekozen")
-        self.sink_label.setStyleSheet("color: #666;")
-        self.sink_label.setWordWrap(True)
-        left_layout.addWidget(self.sink_label)
+
+        self.sink_table = QTableWidget(0, 2)
+        self.sink_table.setHorizontalHeaderLabels(["Sink", ""])
+        self.sink_table.verticalHeader().setVisible(False)
+        self.sink_table.setColumnWidth(1, 30)
+        self.sink_table.setMaximumHeight(120)
+        left_layout.addWidget(self.sink_table)
 
         self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken berging")
         self.btn_loss.clicked.connect(self._on_loss)
@@ -281,8 +281,14 @@ class DrainworksDock(QDockWidget):
         self.sinks = {m.code for m in manholes if m.is_sink}
         # Treat the loaded sinks as the baseline (not stale until they change).
         self.computed_sinks = set(self.sinks) if self.sinks else None
-        self._update_sink_label()
+        self._update_sink_table()
         self._update_berging_button()
+
+        for lyr in (pipe_layer, manhole_layer):
+            try:
+                lyr.afterCommitChanges.connect(self._on_base_edited)
+            except (AttributeError, TypeError):
+                pass
 
         if self.graphics is None:
             self.graphics = TrajectoryGraphics(self.iface.mapCanvas())
@@ -296,6 +302,11 @@ class DrainworksDock(QDockWidget):
     # ------------------------------------------------------------ actions
     def _on_import(self):
         self.plugin.on_import()
+
+    def _on_base_edited(self):
+        """Layer edits committed: mark enrich/berging stale."""
+        self.state.mark_base_edited()
+        self._refresh_step_buttons()
 
     def _read_profile_for_sideview(self):
         """Read the profile layer into {code: [dict(dist,bob,obb,flooded_pct,water_level)]}."""
@@ -487,14 +498,23 @@ class DrainworksDock(QDockWidget):
             self.sinks.add(code)
             self._apply_sinks()
 
-    def _on_clear_sinks(self):
-        self.sinks.clear()
+    def _update_sink_table(self):
+        codes = sorted(self.sinks)
+        self.sink_table.setRowCount(len(codes))
+        for i, code in enumerate(codes):
+            self.sink_table.setItem(i, 0, QTableWidgetItem(code))
+            btn = QPushButton("✕"); btn.setFixedWidth(28)
+            btn.clicked.connect(lambda _c, c=code: self._remove_sink(c))
+            self.sink_table.setCellWidget(i, 1, btn)
+
+    def _remove_sink(self, code):
+        self.sinks.discard(code)
         self._apply_sinks()
 
     def _apply_sinks(self):
         # Sinks are persisted to the GeoPackage only when the berging is computed
         # (see _on_loss), so changing them just updates the UI + staleness state.
-        self._update_sink_label()
+        self._update_sink_table()
         self._update_sink_markers()
         self._update_berging_button()
         self.state.mark_sinks_changed()
@@ -517,14 +537,6 @@ class DrainworksDock(QDockWidget):
         points = [QgsPointXY(*self.manhole_points[c]) for c in self.sinks
                   if c in self.manhole_points]
         self.graphics.set_sink_markers(points)
-
-    def _update_sink_label(self):
-        if self.sinks:
-            self.sink_label.setText("sinks: " + ", ".join(sorted(self.sinks)))
-            self.sink_label.setStyleSheet("color: #0079c1;")
-        else:
-            self.sink_label.setText("geen sinks gekozen")
-            self.sink_label.setStyleSheet("color: #666;")
 
     # -------------------------------------------------------- trajectory
     def _commit_waypoints(self, push=True):
