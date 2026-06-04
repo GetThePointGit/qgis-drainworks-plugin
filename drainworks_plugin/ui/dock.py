@@ -59,6 +59,7 @@ class DrainworksDock(QDockWidget):
         self._manholes_by_code = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
+        self.active_code = None
         from drainworks_plugin.trajectory.history import WaypointHistory
         self.history = WaypointHistory()
         self.sinks = set()
@@ -90,11 +91,15 @@ class DrainworksDock(QDockWidget):
         # --- Main toolbar. ---
         actions = QHBoxLayout()
         self.btn_import = self._tool_button("Importeren", "import.svg", self._on_import)
+        self.btn_import.setToolTip("Importeer RIBX/SUFRIB of een bestaande GeoPackage")
         self.btn_traj = self._tool_button("Traject", "trajectory.svg", self._on_traj_toggled,
                                           checkable=True)
+        self.btn_traj.setToolTip("Stel een traject samen door putten op de kaart te klikken")
         self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
+        self.btn_style.setToolTip("Pas de kaartopmaak van leidingen en putten aan")
         self.btn_settings = self._tool_button("Instellingen", "lost_capacity.svg",
                                               self._on_sideview_settings)
+        self.btn_settings.setToolTip("Instellingen voor het langsprofiel")
         for b in (self.btn_import, self.btn_traj, self.btn_style, self.btn_settings):
             actions.addWidget(b)
         actions.addStretch()
@@ -118,6 +123,8 @@ class DrainworksDock(QDockWidget):
         gear1.addWidget(self.btn_enrich_settings)
         c1.addLayout(gear1)
         self.btn_enrich = QPushButton(_icon("lost_capacity.svg"), "Verrijk basisdata")
+        self.btn_enrich.setToolTip(
+            "Valideer, bereken hoogtes en bouw segmenten uit de basisdata")
         self.btn_enrich.clicked.connect(self._on_enrich)
         c1.addWidget(self.btn_enrich)
         self.enrich_status = QLabel("")
@@ -154,13 +161,16 @@ class DrainworksDock(QDockWidget):
         sink_row.addWidget(add_sink)
         sink_row.addWidget(self.btn_sink_map)
         c2.addLayout(sink_row)
-        self.sink_table = QTableWidget(0, 2)
-        self.sink_table.setHorizontalHeaderLabels(["Sink", ""])
+        self.sink_table = QTableWidget(0, 3)
+        self.sink_table.setHorizontalHeaderLabels(["Sink", "bodem (m)", ""])
         self.sink_table.verticalHeader().setVisible(False)
-        self.sink_table.setColumnWidth(1, 30)
+        self.sink_table.setColumnWidth(1, 70)
+        self.sink_table.setColumnWidth(2, 30)
         self.sink_table.setMaximumHeight(120)
         c2.addWidget(self.sink_table)
         self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken verloren berging")
+        self.btn_loss.setToolTip(
+            "Bereken de verloren berging op de segmenten met de gekozen sinks")
         self.btn_loss.clicked.connect(self._on_loss)
         c2.addWidget(self.btn_loss)
         self.loss_status = QLabel("")
@@ -182,16 +192,18 @@ class DrainworksDock(QDockWidget):
         traj_layout = QHBoxLayout(self.traj_bar)
         traj_layout.setContentsMargins(0, 0, 0, 0)
         traj_layout.addWidget(QLabel("Traject:"))
-        self.btn_traj_downstream = QPushButton("Stroomafw.")
-        self.btn_traj_downstream.clicked.connect(self._on_downstream)
-        self.btn_traj_delmode = QPushButton("Verwijdermodus")
-        self.btn_traj_delmode.setCheckable(True)
-        self.btn_traj_clear = QPushButton("Wis")
-        self.btn_traj_clear.clicked.connect(self._on_reset)
-        self.btn_traj_undo = QPushButton("↶")
-        self.btn_traj_undo.clicked.connect(self._on_undo)
-        self.btn_traj_redo = QPushButton("↷")
-        self.btn_traj_redo.clicked.connect(self._on_redo)
+        self.btn_traj_downstream = self._text_tool_button(
+            "Stroomafw.", "downstream.svg", self._on_downstream,
+            "Verleng het traject stroomafwaarts vanaf het laatste punt")
+        self.btn_traj_delmode = self._text_tool_button(
+            "Verwijdermodus", "delete_mode.svg", None,
+            "Klik daarna één put aan om die uit het traject te verwijderen", checkable=True)
+        self.btn_traj_clear = self._text_tool_button(
+            "Wis", "clear.svg", self._on_reset, "Wis het hele traject")
+        self.btn_traj_undo = self._text_tool_button(
+            "Ongedaan", "undo.svg", self._on_undo, "Maak de laatste wijziging ongedaan")
+        self.btn_traj_redo = self._text_tool_button(
+            "Opnieuw", "redo.svg", self._on_redo, "Voer de ongedane wijziging opnieuw uit")
         for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
                   self.btn_traj_undo, self.btn_traj_redo):
             traj_layout.addWidget(b)
@@ -286,6 +298,18 @@ class DrainworksDock(QDockWidget):
         button.setCheckable(checkable)
         button.setAutoRaise(True)
         button.clicked.connect(slot)
+        return button
+
+    def _text_tool_button(self, text, icon_name, slot, tooltip, checkable=False):
+        """A QToolButton with the icon left of the text (trajectory bar style)."""
+        button = QToolButton()
+        button.setText(text)
+        button.setIcon(_icon(icon_name))
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        button.setCheckable(checkable)
+        button.setToolTip(tooltip)
+        if slot is not None:
+            button.clicked.connect(slot)
         return button
 
     def _set_data_enabled(self, enabled):
@@ -522,6 +546,7 @@ class DrainworksDock(QDockWidget):
             return
         for code in path[1:]:
             self.waypoints.append(code)
+        self.active_code = self.waypoints[-1]
         self._commit_waypoints()
 
     def _on_traj_toggled(self, checked):
@@ -578,13 +603,20 @@ class DrainworksDock(QDockWidget):
             self._apply_sinks()
 
     def _update_sink_table(self):
+        from drainworks_plugin.io.geopackage_store import read_manhole_bottom_levels
+        levels = read_manhole_bottom_levels(self.gpkg_path) if self.gpkg_path else {}
         codes = sorted(self.sinks)
         self.sink_table.setRowCount(len(codes))
         for i, code in enumerate(codes):
             self.sink_table.setItem(i, 0, QTableWidgetItem(code))
-            btn = QPushButton("✕"); btn.setFixedWidth(28)
+            bottom = levels.get(code)
+            self.sink_table.setItem(i, 1, QTableWidgetItem(
+                f"{bottom:.2f}" if bottom is not None else "—"))
+            btn = QPushButton("✕")
+            btn.setFixedWidth(28)
+            btn.setToolTip("Verwijder deze sink")
             btn.clicked.connect(lambda _c, c=code: self._remove_sink(c))
-            self.sink_table.setCellWidget(i, 1, btn)
+            self.sink_table.setCellWidget(i, 2, btn)
 
     def _remove_sink(self, code):
         self.sinks.discard(code)
@@ -619,29 +651,36 @@ class DrainworksDock(QDockWidget):
 
     def _on_undo(self):
         self.waypoints = self.history.undo()
+        self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_redo(self):
         self.waypoints = self.history.redo()
+        self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_ctrl_pick(self, code):
         if code in self.waypoints:
             self.waypoints.remove(code)
+            self.active_code = self.waypoints[-1] if self.waypoints else None
             self._commit_waypoints()
 
     def _on_drag(self, from_code, to_code):
         if from_code in self.waypoints and to_code not in self.waypoints:
             self.waypoints[self.waypoints.index(from_code)] = to_code
+            self.active_code = to_code
             self._commit_waypoints()
 
     def _on_pick(self, code):
         if self.btn_traj_delmode.isChecked():
             if code in self.waypoints:
                 self.waypoints.remove(code)
+                self.active_code = self.waypoints[-1] if self.waypoints else None
+                self.btn_traj_delmode.setChecked(False)
                 self._commit_waypoints()
             return
         self._insert_waypoint(code)
+        self.active_code = code
         self._commit_waypoints()
 
     def _insert_waypoint(self, code):
@@ -712,6 +751,7 @@ class DrainworksDock(QDockWidget):
 
     def _on_reset(self):
         self.waypoints = []
+        self.active_code = None
         self._commit_waypoints()
 
     def _rebuild(self):
@@ -739,11 +779,9 @@ class DrainworksDock(QDockWidget):
                 geoms = []
         self.graphics.set_route(geoms)
 
-        if self.waypoints:
-            xy = self.manhole_points.get(self.waypoints[-1])
-            self.graphics.set_active(QgsPointXY(*xy) if xy else None)
-        else:
-            self.graphics.set_active(None)
+        active = self.active_code if self.active_code in self.waypoints else None
+        xy = self.manhole_points.get(active) if active else None
+        self.graphics.set_active(QgsPointXY(*xy) if xy else None)
 
     def _update_side_view(self):
         if self.network is None or len(self.waypoints) < 2:

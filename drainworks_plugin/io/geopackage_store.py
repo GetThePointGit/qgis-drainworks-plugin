@@ -494,3 +494,16 @@ def total_lost_volume(path) -> float:
         if value is not None:
             total += value
     return total
+
+
+def read_manhole_bottom_levels(path) -> dict:
+    """Return ``{manhole_code: bottom_level}`` (NULL bottoms omitted)."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("manholes") if ds is not None else None
+    levels = {}
+    if layer is None:
+        return levels
+    for feat in layer:
+        if not feat.IsFieldNull("bottom_level"):
+            levels[feat.GetField("code")] = feat.GetField("bottom_level")
+    return levels

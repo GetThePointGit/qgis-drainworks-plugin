@@ -42,3 +42,12 @@ def test_total_lost_volume_sums_segments(tmp_gpkg):
                                                     "flooded_pct_max": 0.4, "water_level": -2.2,
                                                     "flooded_length": 10.0}})
     assert round(total_lost_volume(tmp_gpkg), 2) == 1.25
+
+
+def test_read_manhole_bottom_levels(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import read_manhole_bottom_levels
+    _gpkg(tmp_gpkg)
+    levels = read_manhole_bottom_levels(tmp_gpkg)
+    # bottom_level = lowest connected pipe BOB; pipe L1 has bob1=-2.0, bob2=-2.6
+    assert round(levels["A"], 1) == -2.0
+    assert round(levels["B"], 1) == -2.6

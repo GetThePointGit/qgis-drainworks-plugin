@@ -30,11 +30,17 @@ class TrajectoryMapTool(QgsMapTool):
             self._press_code = self._nearest_manhole_code(point)
 
     def canvasReleaseEvent(self, event):  # noqa: N802 (Qt override)
-        if event.button() == Qt.RightButton:
-            self.on_reset()
-            return
         point = self.toMapCoordinates(event.pos())
         code = self._nearest_manhole_code(point)
+        if event.button() == Qt.RightButton:
+            # During trajectory editing (on_ctrl_pick wired) a right-click — which is
+            # also what macOS makes of Ctrl+click — removes the nearest waypoint instead
+            # of clearing everything. Other tools keep the plain reset.
+            if self.on_ctrl_pick is not None and code is not None:
+                self.on_ctrl_pick(code)
+            else:
+                self.on_reset()
+            return
         if code is None:
             return
         ctrl = bool(event.modifiers() & Qt.ControlModifier)
