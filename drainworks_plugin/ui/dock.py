@@ -69,6 +69,9 @@ class DrainworksDock(QDockWidget):
         self.waypoints = []
         self.sinks = set()
         self.computed_sinks = None  # sinks at the last berging computation
+        from drainworks_plugin.pipeline.state import PipelineState
+        self.state = PipelineState()
+        self.active_task = None  # the running QgsTask, if any
         self.map_tool = None
         self.graphics = None
         from drainworks_plugin.styling import views as _v
@@ -104,6 +107,36 @@ class DrainworksDock(QDockWidget):
         actions.addWidget(self.btn_style)
         actions.addStretch()
         left_layout.addLayout(actions)
+
+        # --- Pipeline step buttons (import -> enrich -> berging). ---
+        steps = QHBoxLayout()
+        self.btn_enrich = self._tool_button("Verrijk basisdata", "lost_capacity.svg",
+                                            self._on_enrich)
+        steps.addWidget(self.btn_enrich)
+        steps.addStretch()
+        left_layout.addLayout(steps)
+
+        from qgis.PyQt.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox
+        settings = QHBoxLayout()
+        self.chk_correct_bob = QCheckBox("Corrigeer BOB")
+        self.chk_correct_bob.setChecked(True)
+        self.cmb_resolution = QComboBox()
+        self.cmb_resolution.addItems(["nauwkeurig", "snel"])
+        settings.addWidget(self.chk_correct_bob)
+        settings.addWidget(QLabel("Resolutie:"))
+        settings.addWidget(self.cmb_resolution)
+        left_layout.addLayout(settings)
+
+        seg_settings = QHBoxLayout()
+        self.spn_min_segment = QDoubleSpinBox(); self.spn_min_segment.setRange(0.1, 50.0)
+        self.spn_min_segment.setValue(1.0); self.spn_min_segment.setSuffix(" m")
+        self.spn_bob_segment = QDoubleSpinBox(); self.spn_bob_segment.setRange(0.5, 100.0)
+        self.spn_bob_segment.setValue(5.0); self.spn_bob_segment.setSuffix(" m")
+        seg_settings.addWidget(QLabel("Segment:"))
+        seg_settings.addWidget(self.spn_min_segment)
+        seg_settings.addWidget(QLabel("BOB-seg:"))
+        seg_settings.addWidget(self.spn_bob_segment)
+        left_layout.addLayout(seg_settings)
 
         left_layout.addWidget(QLabel("Sinks (uitstroompunten):"))
         sink_row = QHBoxLayout()
@@ -192,7 +225,6 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.io.geopackage_store import (
             read_manhole_points,
             read_manholes,
-            read_measurements,
             read_pipes,
         )
         from drainworks_plugin.trajectory.graphics import TrajectoryGraphics
@@ -206,7 +238,7 @@ class DrainworksDock(QDockWidget):
         self.pipes_by_code = {p.code: p for p in pipes}
         self.network = SewerNetwork(pipes)
         self.manhole_points = read_manhole_points(self.gpkg_path)
-        self.measurements_by_pipe = read_measurements(self.gpkg_path)
+        self.measurements_by_pipe = self._read_profile_for_sideview()
         self.pipe_geoms = {f["code"]: f.geometry() for f in pipe_layer.getFeatures()}
 
         # Sink combo + existing sinks.
@@ -225,26 +257,111 @@ class DrainworksDock(QDockWidget):
         self._update_sink_markers()
         self._rebuild()
         self._set_data_enabled(True)
+        self.state.mark_imported()
+        self._refresh_step_buttons()
 
     # ------------------------------------------------------------ actions
     def _on_import(self):
         self.plugin.on_import()
 
+    def _read_profile_for_sideview(self):
+        """Read the profile layer into {code: [dict(dist,bob,obb,flooded_pct,water_level)]}."""
+        if not self.gpkg_path:
+            return {}
+        from drainworks_plugin.io.geopackage_store import read_profile
+        out = {}
+        for code, points in read_profile(self.gpkg_path).items():
+            out[code] = [{"dist": p.dist, "bob": p.bob, "obb": p.obb,
+                          "flooded_pct": None, "water_level": None} for p in points]
+        return out
+
+    def _reload_profile(self):
+        self.measurements_by_pipe = self._read_profile_for_sideview()
+        self._rebuild()
+
+    def _on_enrich(self):
+        """Step 2: enrich the (possibly edited) base data, off-thread."""
+        if not self.gpkg_path:
+            self.iface.messageBar().pushWarning("Drainworks", "Importeer eerst data.")
+            return
+        from drainworks_plugin.pipeline.tasks import EnrichTask
+
+        task = EnrichTask(self.gpkg_path,
+                          correct_bob=self.chk_correct_bob.isChecked(),
+                          min_segment=self.spn_min_segment.value(),
+                          bob_segment=self.spn_bob_segment.value(),
+                          on_done=self._enrich_done)
+        self._run_task(task)
+
+    def _enrich_done(self, task):
+        if task.error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
+            self.active_task = None
+            return
+        self.state.mark_enriched()
+        s = task.result or {}
+        self.plugin.reload_pipeline_layers()
+        self._reload_profile()
+        self._refresh_step_buttons()
+        self.active_task = None
+        self.iface.messageBar().pushSuccess(
+            "Drainworks",
+            f"Verrijkt: {s.get('n_segments', 0)} segmenten, "
+            f"{s.get('n_pipes_with_issues', 0)} leidingen met problemen.")
+
     def _on_loss(self):
+        """Step 3: compute lost storage with the chosen sinks, off-thread."""
+        if not self.gpkg_path:
+            self.iface.messageBar().pushWarning("Drainworks", "Importeer eerst data.")
+            return
         if not self.sinks:
             self.iface.messageBar().pushWarning("Drainworks", "Kies eerst minimaal één sink.")
             return
-        from drainworks_plugin.io.geopackage_store import read_measurements, set_sinks
+        if self.state.enrich_stale:
+            self.iface.messageBar().pushWarning(
+                "Drainworks", "Verrijk eerst de basisdata (stap 2).")
+            return
+        from drainworks_plugin.io.geopackage_store import set_sinks
+        from drainworks_plugin.pipeline.tasks import BergingTask
 
-        # Persist the chosen sinks only now (at computation time), then compute.
-        if self.gpkg_path:
-            set_sinks(self.gpkg_path, self.sinks)
-        self.plugin.on_compute_loss()
+        set_sinks(self.gpkg_path, self.sinks)
+        resolution = "accurate" if self.cmb_resolution.currentIndex() == 0 else "fast"
+        task = BergingTask(self.gpkg_path, resolution=resolution, on_done=self._loss_done)
+        self._run_task(task)
+
+    def _loss_done(self, task):
+        if task.error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
+            self.active_task = None
+            return
+        self.state.mark_berging_computed()
         self.computed_sinks = set(self.sinks)
-        if self.gpkg_path:
-            self.measurements_by_pipe = read_measurements(self.gpkg_path)
-        self._update_berging_button()
+        self.plugin.reload_pipeline_layers()
+        self._refresh_step_buttons()
         self._rebuild()
+        self.active_task = None
+        self.iface.messageBar().pushSuccess(
+            "Drainworks", f"Verloren berging berekend ({task.result} segmenten).")
+
+    def _run_task(self, task):
+        """Submit a QgsTask to the task manager, disabling the step buttons."""
+        from qgis.core import QgsApplication
+
+        self.active_task = task
+        for btn in (self.btn_enrich, self.btn_loss):
+            btn.setEnabled(False)
+        QgsApplication.taskManager().addTask(task)
+
+    def _refresh_step_buttons(self):
+        """Re-enable + relabel the step buttons from the PipelineState."""
+        self.btn_enrich.setEnabled(self.gpkg_path is not None)
+        self.btn_loss.setEnabled(self.gpkg_path is not None)
+        self.btn_enrich.setText(self.state.enrich_label())
+        self.btn_enrich.setStyleSheet(
+            "color: #c54141; font-weight: bold;" if self.state.enrich_stale and self.state.enrich_ran else "")
+        self.btn_loss.setText(self.state.berging_label())
+        self.btn_loss.setStyleSheet(
+            "color: #c54141; font-weight: bold;" if self.state.berging_stale and self.state.berging_ran else "")
 
     def _on_style(self):
         if self.pipe_layer is None or self.manhole_layer is None:
@@ -341,6 +458,8 @@ class DrainworksDock(QDockWidget):
         self._update_sink_label()
         self._update_sink_markers()
         self._update_berging_button()
+        self.state.mark_sinks_changed()
+        self._refresh_step_buttons()
 
     def _update_berging_button(self):
         """Reflect whether the berging is up to date with the current sinks."""
