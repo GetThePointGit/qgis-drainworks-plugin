@@ -59,6 +59,28 @@ class SideViewWidget(QWidget):
         self.plot.clear()
         self._cursor.hide()
 
+    def _style(self, key):
+        from drainworks_plugin.sideview.settings import LINE_DEFAULTS
+        lines = getattr(self, "_lines", None) or LINE_DEFAULTS
+        return lines.get(key, LINE_DEFAULTS[key])
+
+    def _pen(self, key, dashed=False):
+        s = self._style(key)
+        kw = {"color": s.get("color", "#000000"), "width": s.get("width", 1)}
+        if dashed:
+            kw["style"] = Qt.DashLine
+        return pg.mkPen(**kw)
+
+    def _add_water_fill(self, bob_dists, bobs, water_dists, water_levels):
+        from qgis.PyQt.QtGui import QColor
+        bob_curve = pg.PlotCurveItem(bob_dists, bobs)
+        water_curve = pg.PlotCurveItem(water_dists, water_levels)
+        brush_color = QColor(self._style("water").get("color", "#2c7fb8"))
+        brush_color.setAlpha(120)
+        self.plot.addItem(pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(brush_color)))
+        self.plot.plot(water_dists, water_levels, pen=self._pen("water", dashed=True),
+                       name="Waterpeil")
+
     def show_profile(self, profile) -> None:
         """Render a Profile."""
         self.plot.clear()
@@ -75,49 +97,40 @@ class SideViewWidget(QWidget):
         if profile.ideal:
             self.plot.plot(
                 [d for d, _ in profile.ideal], [b for _, b in profile.ideal],
-                pen=pg.mkPen("#cc8400", width=1, style=Qt.DashLine), name="BOB leiding (recht)",
-            )
+                pen=self._pen("ideal", dashed=True), name="BOB leiding (recht)")
 
         # Crown (top of pipe) and measured invert with a marker per point.
-        self.plot.plot(dists, obbs, pen=pg.mkPen("#888888", width=1), name="Bovenkant buis")
+        self.plot.plot(dists, obbs, pen=self._pen("crown"), name="Bovenkant buis")
+        bob_color = self._style("bob").get("color", "#333333")
         self.plot.plot(
-            dists, bobs,
-            pen=pg.mkPen(getattr(self, "_line_color", "#333333"),
-                         width=getattr(self, "_line_width", 2)),
-            name="BOB gemeten",
-            symbol="o", symbolSize=4,
-            symbolBrush=getattr(self, "_line_color", "#333333"), symbolPen=None,
-        )
+            dists, bobs, pen=self._pen("bob"), name="BOB gemeten",
+            symbol="o", symbolSize=4, symbolBrush=bob_color, symbolPen=None)
 
         # Water-level fill (verloren berging) where water_level is set.
         water = [v.water_level if v.water_level is not None else v.bob for v in profile.vertices]
         if any(v.water_level is not None for v in profile.vertices):
-            bob_curve = pg.PlotCurveItem(dists, bobs)
-            water_curve = pg.PlotCurveItem(dists, water)
-            fill = pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(44, 127, 184, 120))
-            self.plot.addItem(fill)
-            self.plot.plot(dists, water, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine),
-                           name="Waterpeil")
+            self._add_water_fill(dists, bobs, dists, water)
 
         # Each put: a solid green invert->maaiveld line, plus a thin light full-height
         # line carrying the put code as a vertical label. Both stay out of auto-zoom.
         show_codes = getattr(self, "_show_putcodes", True)
+        put_color = self._style("put").get("color", "#398a39")
         levels = getattr(profile, "manhole_levels", [])
         for dist, code, bottom, ground in levels:
             top = ground if ground is not None else bottom
-            item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=pg.mkPen("#398a39", width=2))
+            item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=self._pen("put"))
             self.plot.addItem(item, ignoreBounds=True)
             line = pg.InfiniteLine(
-                pos=dist, angle=90, pen=pg.mkPen("#b5d6b5", width=1),
+                pos=dist, angle=90, pen=pg.mkPen(put_color, width=1),
                 label=(code if show_codes else None),
-                labelOpts={"position": 0.92, "color": "#398a39", "rotateAxis": (1, 0)})
+                labelOpts={"position": 0.92, "color": put_color, "rotateAxis": (1, 0)})
             self.plot.addItem(line)
         # Maaiveld line connecting the put ground levels (excluded from auto-zoom).
         ground_pts = [(d, g) for d, _c, _b, g in levels if g is not None]
         if len(ground_pts) >= 2:
             maaiveld = pg.PlotCurveItem(
                 [d for d, _ in ground_pts], [g for _, g in ground_pts],
-                pen=pg.mkPen("#a0522d", width=1, style=Qt.DashLine), name="Maaiveld")
+                pen=self._pen("maaiveld", dashed=True), name="Maaiveld")
             self.plot.addItem(maaiveld, ignoreBounds=True)
 
         # Observation markers as vertical dotted lines with labels.
@@ -137,17 +150,21 @@ class SideViewWidget(QWidget):
     def apply_settings(self, settings):
         """Apply SideViewSettings (re-render the current profile if any)."""
         self._show_putcodes = settings.show_putcodes
-        self._line_color = settings.line_color
-        self._line_width = settings.line_width
+        self._lines = settings.lines
         legend = self.plot.plotItem.legend
         if legend is not None:
-            anchor = (0, 0) if settings.legend_position == "top-left" else (1, 0)
-            offset = (10, 10) if settings.legend_position == "top-left" else (-10, 10)
-            legend.anchor(anchor, anchor, offset)
-            if settings.legend_white_bg:
-                legend.setBrush(pg.mkBrush(255, 255, 255, 220))
-            else:
-                legend.setBrush(None)
+            anchors = {
+                "top-left": ((0, 0), (0, 0), (10, 10)),
+                "top-right": ((1, 0), (1, 0), (-10, 10)),
+                "bottom-left": ((0, 1), (0, 1), (10, -10)),
+                "bottom-right": ((1, 1), (1, 1), (-10, -10)),
+                "below": ((0.5, 1), (0.5, 1), (0, 0)),
+            }
+            a = anchors.get(settings.legend_position, anchors["top-left"])
+            legend.anchor(*a)
+            if hasattr(legend, "setColumnCount"):
+                legend.setColumnCount(8 if settings.legend_position == "below" else 1)
+            legend.setBrush(pg.mkBrush(255, 255, 255, 220) if settings.legend_white_bg else None)
         if getattr(self, "_last_profile", None) is not None:
             self.show_profile(self._last_profile)
 
@@ -160,10 +177,5 @@ class SideViewWidget(QWidget):
             return
         dists = [v.dist for v in verts]
         bobs = [v.bob for v in verts]
-        wd = [d for d, _ in water_points]
-        wl = [lvl for _, lvl in water_points]
-        bob_curve = pg.PlotCurveItem(dists, bobs)
-        water_curve = pg.PlotCurveItem(wd, wl)
-        fill = pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(44, 127, 184, 120))
-        self.plot.addItem(fill)
-        self.plot.plot(wd, wl, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine), name="Waterpeil")
+        self._add_water_fill(dists, bobs, [d for d, _ in water_points],
+                             [lvl for _, lvl in water_points])
