@@ -373,6 +373,9 @@ class DrainworksDock(QDockWidget):
 
         if self.graphics is None:
             self.graphics = TrajectoryGraphics(self.iface.mapCanvas())
+        if not self._canvas_move_connected:
+            self.iface.mapCanvas().xyCoordinates.connect(self._on_canvas_move)
+            self._canvas_move_connected = True
         self.waypoints = []
         self._update_sink_markers()
         self._rebuild()
@@ -626,6 +629,9 @@ class DrainworksDock(QDockWidget):
             self.btn_traj_delmode.setChecked(False)
             self._clear_tool()
             canvas.viewport().removeEventFilter(self)
+            if self.graphics is not None:
+                self.graphics.set_hover(None)
+            self._last_hover_code = None
         self._update_side_view()
         self._update_graphics()
 
@@ -803,6 +809,15 @@ class DrainworksDock(QDockWidget):
             self._last_hover_code = nearest_code
             self._preview(nearest_code)
 
+    def _on_canvas_move(self, point):
+        """Any map mouse move: drive the graph cursor from the route (editing or not)."""
+        if not self.route_polyline:
+            self.side_view.set_cursor(None)
+            return
+        mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+        dist, offset = self._project_on_route(point.x(), point.y())
+        self.side_view.set_cursor(dist if offset <= mupp * 14 else None)
+
     def _project_on_route(self, px, py):
         """Return (cumulative_dist, perpendicular_offset) of the nearest route point."""
         best_dist, best_off = 0.0, float("inf")
@@ -959,6 +974,9 @@ class DrainworksDock(QDockWidget):
             self.map_tool = None
         self.btn_traj.setChecked(False)
         self.btn_sink_map.setChecked(False)
+        if self.graphics is not None:
+            self.graphics.set_hover(None)
+        self._last_hover_code = None
 
     def clear_graphics(self):
         if self.graphics is not None:
@@ -967,6 +985,12 @@ class DrainworksDock(QDockWidget):
     def teardown(self):
         """Release the map tool and remove all canvas items (for plugin unload)."""
         self.deactivate_tool()
+        if self._canvas_move_connected:
+            try:
+                self.iface.mapCanvas().xyCoordinates.disconnect(self._on_canvas_move)
+            except (TypeError, RuntimeError):
+                pass
+            self._canvas_move_connected = False
         if self.graphics is not None:
             self.graphics.destroy()
             self.graphics = None
