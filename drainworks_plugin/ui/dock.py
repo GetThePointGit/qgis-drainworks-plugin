@@ -91,11 +91,15 @@ class DrainworksDock(QDockWidget):
         # --- Main toolbar. ---
         actions = QHBoxLayout()
         self.btn_import = self._tool_button("Importeren", "import.svg", self._on_import)
+        self.btn_import.setToolTip("Importeer RIBX/SUFRIB of een bestaande GeoPackage")
         self.btn_traj = self._tool_button("Traject", "trajectory.svg", self._on_traj_toggled,
                                           checkable=True)
+        self.btn_traj.setToolTip("Stel een traject samen door putten op de kaart te klikken")
         self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
+        self.btn_style.setToolTip("Pas de kaartopmaak van leidingen en putten aan")
         self.btn_settings = self._tool_button("Instellingen", "lost_capacity.svg",
                                               self._on_sideview_settings)
+        self.btn_settings.setToolTip("Instellingen voor het langsprofiel")
         for b in (self.btn_import, self.btn_traj, self.btn_style, self.btn_settings):
             actions.addWidget(b)
         actions.addStretch()
@@ -119,6 +123,8 @@ class DrainworksDock(QDockWidget):
         gear1.addWidget(self.btn_enrich_settings)
         c1.addLayout(gear1)
         self.btn_enrich = QPushButton(_icon("lost_capacity.svg"), "Verrijk basisdata")
+        self.btn_enrich.setToolTip(
+            "Valideer, bereken hoogtes en bouw segmenten uit de basisdata")
         self.btn_enrich.clicked.connect(self._on_enrich)
         c1.addWidget(self.btn_enrich)
         self.enrich_status = QLabel("")
@@ -163,6 +169,8 @@ class DrainworksDock(QDockWidget):
         self.sink_table.setMaximumHeight(120)
         c2.addWidget(self.sink_table)
         self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken verloren berging")
+        self.btn_loss.setToolTip(
+            "Bereken de verloren berging op de segmenten met de gekozen sinks")
         self.btn_loss.clicked.connect(self._on_loss)
         c2.addWidget(self.btn_loss)
         self.loss_status = QLabel("")
@@ -184,16 +192,18 @@ class DrainworksDock(QDockWidget):
         traj_layout = QHBoxLayout(self.traj_bar)
         traj_layout.setContentsMargins(0, 0, 0, 0)
         traj_layout.addWidget(QLabel("Traject:"))
-        self.btn_traj_downstream = QPushButton("Stroomafw.")
-        self.btn_traj_downstream.clicked.connect(self._on_downstream)
-        self.btn_traj_delmode = QPushButton("Verwijdermodus")
-        self.btn_traj_delmode.setCheckable(True)
-        self.btn_traj_clear = QPushButton("Wis")
-        self.btn_traj_clear.clicked.connect(self._on_reset)
-        self.btn_traj_undo = QPushButton("↶")
-        self.btn_traj_undo.clicked.connect(self._on_undo)
-        self.btn_traj_redo = QPushButton("↷")
-        self.btn_traj_redo.clicked.connect(self._on_redo)
+        self.btn_traj_downstream = self._text_tool_button(
+            "Stroomafw.", "downstream.svg", self._on_downstream,
+            "Verleng het traject stroomafwaarts vanaf het laatste punt")
+        self.btn_traj_delmode = self._text_tool_button(
+            "Verwijdermodus", "delete_mode.svg", None,
+            "Klik daarna één put aan om die uit het traject te verwijderen", checkable=True)
+        self.btn_traj_clear = self._text_tool_button(
+            "Wis", "clear.svg", self._on_reset, "Wis het hele traject")
+        self.btn_traj_undo = self._text_tool_button(
+            "Ongedaan", "undo.svg", self._on_undo, "Maak de laatste wijziging ongedaan")
+        self.btn_traj_redo = self._text_tool_button(
+            "Opnieuw", "redo.svg", self._on_redo, "Voer de ongedane wijziging opnieuw uit")
         for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
                   self.btn_traj_undo, self.btn_traj_redo):
             traj_layout.addWidget(b)
@@ -288,6 +298,18 @@ class DrainworksDock(QDockWidget):
         button.setCheckable(checkable)
         button.setAutoRaise(True)
         button.clicked.connect(slot)
+        return button
+
+    def _text_tool_button(self, text, icon_name, slot, tooltip, checkable=False):
+        """A QToolButton with the icon left of the text (trajectory bar style)."""
+        button = QToolButton()
+        button.setText(text)
+        button.setIcon(_icon(icon_name))
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        button.setCheckable(checkable)
+        button.setToolTip(tooltip)
+        if slot is not None:
+            button.clicked.connect(slot)
         return button
 
     def _set_data_enabled(self, enabled):
