@@ -1,35 +1,16 @@
 """Write/read the sewer GeoPackage. Pure OGR (no QGIS) so it is testable.
 
-Layers (EPSG:28992): manholes (Point), pipes (LineString), measurements (Point,
-empty geometry — used as an attribute table for lost-capacity results).
+Layers (EPSG:28992): manholes (Point), pipes (LineString), and the pipeline
+layers produced downstream (measurements_raw, profile, segments).
 """
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from osgeo import ogr, osr
 
 import rgs_ribx
 
 RD_EPSG = 28992
-
-
-@dataclass
-class MeasurementRow:
-    """A row for the ``measurements`` layer (lost-capacity output).
-
-    ``geometry_wkt`` is the point on the map (interpolated along the pipe at
-    ``dist``); when set, the row renders on the canvas.
-    """
-
-    pipe_code: str
-    dist: float
-    bob: float
-    obb: float
-    water_level: Optional[float] = None
-    flooded_pct: Optional[float] = None
-    geometry_wkt: Optional[str] = None
 
 
 def _srs() -> "osr.SpatialReference":
@@ -107,29 +88,6 @@ def linestring_substring_wkt(line_wkt, d0, d1):
     return "LINESTRING (" + ", ".join(f"{x:.3f} {y:.3f}" for x, y in out) + ")"
 
 
-def write_geopackage(path, manholes, pipes, measurements) -> Path:
-    """Create (overwrite) a GeoPackage with manholes, pipes, measurements."""
-    path = Path(path)
-    if path.exists():
-        path.unlink()
-
-    driver = ogr.GetDriverByName("GPKG")
-    ds = driver.CreateDataSource(str(path))
-    srs = _srs()
-
-    # One transaction around all inserts — without it, every feature is its own
-    # SQLite commit (hundreds of thousands of measurement points take minutes).
-    bottom_levels = _manhole_bottom_levels(pipes)
-    ds.StartTransaction()
-    _write_manholes(ds, srs, manholes, bottom_levels)
-    _write_pipes(ds, srs, pipes)
-    _write_measurements(ds, srs, measurements)
-    ds.CommitTransaction()
-
-    ds = None  # flush + close
-    return path
-
-
 def _manhole_bottom_levels(pipes) -> dict:
     """{manhole_code: lowest connected pipe BOB} — the put's bottom (bodemhoogte)."""
     levels = {}
@@ -198,83 +156,6 @@ def _write_pipes(ds, srs, pipes) -> None:
             feat.SetGeometry(ogr.CreateGeometryFromWkt(p.geometry_wkt))
         layer.CreateFeature(feat)
         feat = None
-
-
-def _write_measurements(ds, srs, measurements) -> None:
-    layer = ds.CreateLayer("measurements", srs, ogr.wkbPoint)
-    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
-    for name in ["dist", "bob", "obb", "water_level", "flooded_pct"]:
-        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
-    defn = layer.GetLayerDefn()
-    for row in measurements:
-        _fill_measurement_feature(ogr.Feature(defn), row, layer)
-
-
-def _fill_measurement_feature(feat, row, layer) -> None:
-    """Populate and create a measurement feature (with geometry if present)."""
-    _set(feat, "pipe_code", row.pipe_code)
-    _set(feat, "dist", row.dist)
-    _set(feat, "bob", row.bob)
-    _set(feat, "obb", row.obb)
-    _set(feat, "water_level", row.water_level)
-    _set(feat, "flooded_pct", row.flooded_pct)
-    if getattr(row, "geometry_wkt", None):
-        feat.SetGeometry(ogr.CreateGeometryFromWkt(row.geometry_wkt))
-    layer.CreateFeature(feat)
-
-
-def replace_measurements(path, rows) -> int:
-    """Replace every feature in the ``measurements`` layer with ``rows``.
-
-    Returns the number of rows written. Used by the lost-capacity runner, which
-    rebuilds the whole layer (real + BOB-derived points) on every run.
-    """
-    ds = ogr.Open(str(path), update=1)
-    # Drop and recreate the layer (fast) instead of deleting features one by one.
-    for i in range(ds.GetLayerCount()):
-        if ds.GetLayer(i).GetName() == "measurements":
-            ds.DeleteLayer(i)
-            break
-    ds.StartTransaction()
-    _write_measurements(ds, _srs(), rows)
-    ds.CommitTransaction()
-    ds = None
-    return len(rows)
-
-
-def write_berging_lines(path, line_rows) -> int:
-    """Create/replace the ``berging`` LineString layer (aggregated lost-storage).
-
-    Each row is a dict with ``pipe_code, dist_start, dist_end, length,
-    flooded_pct, water_level, lost_volume, geometry_wkt``.
-    """
-    ds = ogr.Open(str(path), update=1)
-    for i in range(ds.GetLayerCount()):
-        if ds.GetLayer(i).GetName() == "berging":
-            ds.DeleteLayer(i)
-            break
-    layer = ds.CreateLayer("berging", _srs(), ogr.wkbLineString)
-    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
-    for name in ["dist_start", "dist_end", "length", "flooded_pct",
-                 "water_level", "lost_volume"]:
-        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
-    defn = layer.GetLayerDefn()
-    ds.StartTransaction()
-    for row in line_rows:
-        feat = ogr.Feature(defn)
-        _set(feat, "pipe_code", row.get("pipe_code"))
-        _set(feat, "dist_start", row.get("dist_start"))
-        _set(feat, "dist_end", row.get("dist_end"))
-        _set(feat, "length", row.get("length"))
-        _set(feat, "flooded_pct", row.get("flooded_pct"))
-        _set(feat, "water_level", row.get("water_level"))
-        _set(feat, "lost_volume", row.get("lost_volume"))
-        if row.get("geometry_wkt"):
-            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
-        layer.CreateFeature(feat)
-    ds.CommitTransaction()
-    ds = None
-    return len(line_rows)
 
 
 def read_pipes(path) -> list:
@@ -351,34 +232,6 @@ def set_sinks(path, sink_codes) -> int:
         flagged += is_sink
     ds = None
     return flagged
-
-
-def read_measurements(path) -> dict:
-    """Return {pipe_code: [dict(dist, bob, obb, water_level, flooded_pct)]}.
-
-    Sorted by distance per pipe. Used to draw the measured profile + water level
-    in the side-view and to total the lost storage along a trajectory.
-    """
-    ds = ogr.Open(str(path))
-    layer = ds.GetLayerByName("measurements")
-    grouped = {}
-    if layer is None:
-        return grouped
-    for feat in layer:
-        grouped.setdefault(feat.GetField("pipe_code"), []).append(
-            {
-                "dist": feat.GetField("dist"),
-                "bob": feat.GetField("bob"),
-                "obb": feat.GetField("obb"),
-                "water_level": (None if feat.IsFieldNull("water_level")
-                                else feat.GetField("water_level")),
-                "flooded_pct": (None if feat.IsFieldNull("flooded_pct")
-                                else feat.GetField("flooded_pct")),
-            }
-        )
-    for points in grouped.values():
-        points.sort(key=lambda m: m["dist"])
-    return grouped
 
 
 def read_manhole_points(path):

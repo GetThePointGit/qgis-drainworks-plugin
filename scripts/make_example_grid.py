@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.expanduser("~/Documents/GitHub/rgs-ribx/src"))
 import rgs_ribx
 from rgs_ribx.model.geometry import wkt_linestring_length
 
-from drainworks_plugin.io.geopackage_store import MeasurementRow, write_geopackage
+from drainworks_plugin.io.geopackage_store import write_base
 
 X0, Y0 = 100000.0, 400000.0
 DIAMETER = 0.3
@@ -95,16 +95,7 @@ def build(cols, rows, spacing, basin):
         for row in range(rows - 1):
             add_pipe(code(col, row, cols), code(col, row + 1, cols))
 
-    measurements = []
-    if not basin:
-        dip = pipes[0]
-        low = min(dip.bob1, dip.bob2)
-        measurements = [
-            MeasurementRow(pipe_code=dip.code, dist=10.0, bob=low - 0.10, obb=low - 0.10 + DIAMETER),
-            MeasurementRow(pipe_code=dip.code, dist=20.0, bob=low - 0.18, obb=low - 0.18 + DIAMETER),
-            MeasurementRow(pipe_code=dip.code, dist=30.0, bob=low - 0.10, obb=low - 0.10 + DIAMETER),
-        ]
-    return manholes, pipes, measurements, sink_code
+    return manholes, pipes, sink_code
 
 
 def main():
@@ -116,13 +107,13 @@ def main():
     parser.add_argument("--out", default=os.path.join(REPO, "example", "grid10.gpkg"))
     args = parser.parse_args()
 
-    manholes, pipes, measurements, sink_code = build(args.cols, args.rows, args.spacing, args.basin)
+    manholes, pipes, sink_code = build(args.cols, args.rows, args.spacing, args.basin)
     out = args.out if os.path.isabs(args.out) else os.path.join(REPO, args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    write_geopackage(out, manholes, pipes, measurements)
+    write_base(out, manholes, pipes, raw_measurements={})
     print(f"Wrote {out}")
     print(f"  {len(manholes)} manholes (sink: {sink_code}), {len(pipes)} pipes, "
-          f"{len(measurements)} measured points, terrain={'basin' if args.basin else 'slope'}")
+          f"terrain={'basin' if args.basin else 'slope'}")
 
 
 if __name__ == "__main__":
