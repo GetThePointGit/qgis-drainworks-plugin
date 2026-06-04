@@ -104,10 +104,11 @@ message bar on completion.
 - Show each put as a **vertical line from bottom (bob) to top (maaiveld)**, drawn
   with `ignoreBounds` so it does not affect auto-zoom.
 - **Live update on light data**: while the trajectory is being edited on the map,
-  the graph updates live from the **segment + put data** (coarse: bob_start/end per
-  segment) — fast enough for live redraw. The **detailed measured profile**
-  (`profile` points) is loaded and shown only once the trajectory is **finalised**
-  (editing stops / tool deactivated). The graph itself stays **read-only**.
+  the graph updates live from just the **pipe BOB line** (`bob1`/`bob2` per pipe —
+  the straight line, lighter even than segments) plus the put lines — trivially
+  fast for live redraw. The **detailed measured profile** (`profile` points) is
+  loaded and shown only once the trajectory is **finalised** (editing stops / tool
+  deactivated). The graph itself stays **read-only**.
 
 ### Sinks
 - Chosen sinks shown in a **table with a per-row delete button** (like the current
