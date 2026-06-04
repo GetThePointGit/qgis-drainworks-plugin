@@ -148,6 +148,8 @@ def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
     layer.CreateField(ogr.FieldDefn("ground_level", ogr.OFTReal))   # maaiveld / putdeksel
     layer.CreateField(ogr.FieldDefn("bottom_level", ogr.OFTReal))   # bodemhoogte (laagste bob)
     layer.CreateField(ogr.FieldDefn("is_sink", ogr.OFTInteger))
+    layer.CreateField(ogr.FieldDefn("valid", ogr.OFTInteger))
+    layer.CreateField(ogr.FieldDefn("issues", ogr.OFTString))
     defn = layer.GetLayerDefn()
     for m in manholes:
         feat = ogr.Feature(defn)
@@ -165,12 +167,13 @@ def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
 def _write_pipes(ds, srs, pipes) -> None:
     layer = ds.CreateLayer("pipes", srs, ogr.wkbLineString)
     str_fields = ["code", "manhole1", "manhole2", "shape", "material",
-                  "sewerage_type", "inspection_date"]
+                  "sewerage_type", "inspection_date", "issues"]
     real_fields = ["diameter", "width", "bob1", "bob2", "length", "bob_avg", "slope"]
     for name in str_fields:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTString))
     for name in real_fields:
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("valid", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
     for p in pipes:
         feat = ogr.Feature(defn)
@@ -388,3 +391,69 @@ def read_manhole_points(path):
         if geom is not None:
             points[feat.GetField("code")] = (geom.GetX(), geom.GetY())
     return points
+
+
+def _write_measurements_raw(ds, srs, raw_measurements) -> None:
+    """Write the un-integrated measurements as a geometry-less attribute table."""
+    layer = ds.CreateLayer("measurements_raw", srs, ogr.wkbNone)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("dist", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("value", ogr.OFTReal))
+    layer.CreateField(ogr.FieldDefn("mtype", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("reverse", ogr.OFTInteger))
+    defn = layer.GetLayerDefn()
+    for code, raw in (raw_measurements or {}).items():
+        for point in raw.points:
+            feat = ogr.Feature(defn)
+            _set(feat, "pipe_code", code)
+            _set(feat, "dist", point.get("dist"))
+            _set(feat, "value", point.get("value"))
+            _set(feat, "mtype", raw.measurement_type)
+            feat.SetField("reverse", 1 if raw.reverse else 0)
+            layer.CreateFeature(feat)
+            feat = None
+
+
+def write_base(path, manholes, pipes, raw_measurements) -> Path:
+    """Create (overwrite) the step-1 GeoPackage: manholes, pipes, measurements_raw.
+
+    No integrated heights, no segments, no validation — those are step 2.
+    """
+    path = Path(path)
+    if path.exists():
+        path.unlink()
+    driver = ogr.GetDriverByName("GPKG")
+    ds = driver.CreateDataSource(str(path))
+    srs = _srs()
+    bottom_levels = _manhole_bottom_levels(pipes)
+    ds.StartTransaction()
+    _write_manholes(ds, srs, manholes, bottom_levels)
+    _write_pipes(ds, srs, pipes)
+    _write_measurements_raw(ds, srs, raw_measurements)
+    ds.CommitTransaction()
+    ds = None
+    return path
+
+
+def read_raw_measurements(path) -> dict:
+    """Read ``measurements_raw`` back into ``{pipe_code: RawMeasurements}``."""
+    from rgs_ribx.model.raw import RawMeasurements
+
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("measurements_raw")
+    grouped = {}
+    meta = {}
+    if layer is None:
+        return grouped
+    for feat in layer:
+        code = feat.GetField("pipe_code")
+        grouped.setdefault(code, []).append(
+            {"dist": feat.GetField("dist"), "value": feat.GetField("value")})
+        if code not in meta:
+            meta[code] = (feat.GetField("mtype") or "", bool(feat.GetField("reverse")))
+    result = {}
+    for code, points in grouped.items():
+        mtype, reverse = meta[code]
+        result[code] = RawMeasurements(pipe_code=code, measurement_type=mtype,
+                                       reverse=reverse, points=points)
+    return result
