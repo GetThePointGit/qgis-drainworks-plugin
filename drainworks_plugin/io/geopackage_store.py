@@ -483,3 +483,133 @@ def set_validation(path, validation) -> None:
     _apply_issues(ds.GetLayerByName("manholes"), validation.get("manholes", {}))
     ds.CommitTransaction()
     ds = None
+
+
+SEGMENT_BERGING_FIELDS = ["water_level", "flooded_pct", "lost_volume",
+                          "flooded_length", "flooded_pct_max"]
+
+
+def _replace_layer(ds, name) -> None:
+    """Drop ``name`` if present (caller recreates it in the same datasource)."""
+    for i in range(ds.GetLayerCount()):
+        if ds.GetLayer(i).GetName() == name:
+            ds.DeleteLayer(i)
+            return
+
+
+def write_profile(path, rows) -> int:
+    """Create/replace the ``profile`` Point layer (detailed computed heights)."""
+    ds = ogr.Open(str(path), update=1)
+    _replace_layer(ds, "profile")
+    layer = ds.CreateLayer("profile", _srs(), ogr.wkbPoint)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    for name in ("dist", "bob", "obb"):
+        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for row in rows:
+        feat = ogr.Feature(defn)
+        _set(feat, "pipe_code", row.get("pipe_code"))
+        _set(feat, "dist", row.get("dist"))
+        _set(feat, "bob", row.get("bob"))
+        _set(feat, "obb", row.get("obb"))
+        if row.get("geometry_wkt"):
+            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
+        layer.CreateFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(rows)
+
+
+def read_profile(path) -> dict:
+    """Return ``{pipe_code: [MeasurementPoint]}`` from the ``profile`` layer."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("profile")
+    grouped = {}
+    if layer is None:
+        return grouped
+    for feat in layer:
+        grouped.setdefault(feat.GetField("pipe_code"), []).append(
+            rgs_ribx.MeasurementPoint(dist=feat.GetField("dist"),
+                                      bob=feat.GetField("bob"),
+                                      obb=feat.GetField("obb")))
+    for points in grouped.values():
+        points.sort(key=lambda p: p.dist)
+    return grouped
+
+
+def write_segments(path, rows) -> int:
+    """Create/replace the ``segments`` LineString layer (empty berging fields)."""
+    ds = ogr.Open(str(path), update=1)
+    _replace_layer(ds, "segments")
+    layer = ds.CreateLayer("segments", _srs(), ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("source", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("n_measurements", ogr.OFTInteger))
+    for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
+                 "bob_highest", "slope_avg", "diameter", *SEGMENT_BERGING_FIELDS):
+        layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for row in rows:
+        feat = ogr.Feature(defn)
+        _set(feat, "pipe_code", row.get("pipe_code"))
+        _set(feat, "source", row.get("source"))
+        feat.SetField("n_measurements", int(row.get("n_measurements") or 0))
+        for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
+                     "bob_highest", "slope_avg", "diameter"):
+            _set(feat, name, row.get(name))
+        if row.get("geometry_wkt"):
+            feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
+        layer.CreateFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(rows)
+
+
+def read_segments(path) -> list:
+    """Return the ``segments`` rows as dicts (including OGR ``fid``)."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("segments")
+    out = []
+    if layer is None:
+        return out
+    for feat in layer:
+        row = {
+            "fid": feat.GetFID(),
+            "pipe_code": feat.GetField("pipe_code"),
+            "source": feat.GetField("source"),
+            "n_measurements": feat.GetField("n_measurements"),
+            "dist_from": feat.GetField("dist_from"),
+            "dist_to": feat.GetField("dist_to"),
+            "length": feat.GetField("length"),
+            "bob_start": feat.GetField("bob_start"),
+            "bob_end": feat.GetField("bob_end"),
+            "bob_highest": feat.GetField("bob_highest"),
+            "slope_avg": feat.GetField("slope_avg"),
+            "diameter": feat.GetField("diameter"),
+        }
+        for name in SEGMENT_BERGING_FIELDS:
+            row[name] = feat.GetField(name)
+        out.append(row)
+    return out
+
+
+def update_segments_berging(path, by_fid) -> int:
+    """Set the berging fields on ``segments`` features keyed by OGR fid."""
+    ds = ogr.Open(str(path), update=1)
+    layer = ds.GetLayerByName("segments")
+    ds.StartTransaction()
+    for fid, values in by_fid.items():
+        feat = layer.GetFeature(fid)
+        if feat is None:
+            continue
+        for name in SEGMENT_BERGING_FIELDS:
+            _set(feat, name, values.get(name))
+        layer.SetFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
+    return len(by_fid)
