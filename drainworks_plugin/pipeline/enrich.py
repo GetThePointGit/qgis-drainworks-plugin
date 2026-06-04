@@ -68,7 +68,7 @@ def enrich(gpkg_path, correct_bob=True, min_segment=MIN_SEGMENT,
     all_issues += [i for v in validation["manholes"].values() for i in v]
     n_errors = sum(1 for i in all_issues if getattr(i, "severity", "error") == "error")
     n_warnings = sum(1 for i in all_issues if getattr(i, "severity", "error") == "warning")
-    return {
+    summary = {
         "n_profile_points": len(profile_rows),
         "n_segments": len(segment_rows),
         "n_pipes_with_issues": n_pipe_issues,
@@ -76,3 +76,12 @@ def enrich(gpkg_path, correct_bob=True, min_segment=MIN_SEGMENT,
         "n_errors": n_errors,
         "n_warnings": n_warnings,
     }
+    from drainworks_plugin.io.geopackage_store import base_fingerprint, write_meta
+    write_meta(gpkg_path, {
+        "enrich_fingerprint": base_fingerprint(gpkg_path),
+        "enrich_settings": {"correct_bob": correct_bob, "min_segment": min_segment,
+                            "bob_segment": bob_segment},
+        "enrich_summary": {"n_segments": summary["n_segments"], "n_errors": summary["n_errors"],
+                           "n_warnings": summary["n_warnings"]},
+    })
+    return summary

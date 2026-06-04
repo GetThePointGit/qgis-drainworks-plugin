@@ -60,3 +60,17 @@ def test_enrich_summary_counts_errors_and_warnings(tmp_gpkg):
     # missing bob2 + dangling manhole2 -> errors ; diameter 5000 mm -> warning
     assert summary["n_errors"] >= 2
     assert summary["n_warnings"] >= 1
+
+
+def test_enrich_writes_meta(fixtures_dir, tmp_gpkg):
+    import rgs_ribx
+    from drainworks_plugin.io.geopackage_store import base_fingerprint, read_meta, write_base
+    from drainworks_plugin.pipeline.enrich import enrich
+
+    res = rgs_ribx.build_from_ribx(fixtures_dir / "inclined.ribx")
+    write_base(tmp_gpkg, res.manholes, res.pipes, res.raw_measurements)
+    enrich(tmp_gpkg, correct_bob=True, min_segment=2.0, bob_segment=4.0)
+    meta = read_meta(tmp_gpkg)
+    assert meta["enrich_fingerprint"] == base_fingerprint(tmp_gpkg)
+    assert meta["enrich_settings"] == {"correct_bob": True, "min_segment": 2.0, "bob_segment": 4.0}
+    assert "n_segments" in meta["enrich_summary"]
