@@ -67,6 +67,7 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.pipeline.state import PipelineState
         self.state = PipelineState()
         self.active_task = None  # the running QgsTask, if any
+        self._busy = None        # the messageBar busy item, if any
         self.map_tool = None
         self.graphics = None
         from drainworks_plugin.styling import views as _v
@@ -418,6 +419,9 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _enrich_done(self, task):
+        from drainworks_plugin.ui.busy import stop_busy
+        stop_busy(self.iface, self._busy)
+        self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
             self.active_task = None
@@ -459,6 +463,9 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _loss_done(self, task):
+        from drainworks_plugin.ui.busy import stop_busy
+        stop_busy(self.iface, self._busy)
+        self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
             self.active_task = None
@@ -480,7 +487,10 @@ class DrainworksDock(QDockWidget):
         """Submit a QgsTask to the task manager, disabling the step buttons."""
         from qgis.core import QgsApplication
 
+        from drainworks_plugin.ui.busy import start_busy
+
         self.active_task = task
+        self._busy = start_busy(self.iface, task.description() + "…")
         for btn in (self.btn_enrich, self.btn_loss):
             btn.setEnabled(False)
         QgsApplication.taskManager().addTask(task)

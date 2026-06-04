@@ -24,6 +24,7 @@ class DrainworksPlugin:
         self.layer_group = None
         self.gpkg_path = None
         self._import_task = None  # keeps the running ImportTask alive
+        self._busy = None         # the messageBar busy item, if any
 
     def initGui(self):  # noqa: N802 (QGIS-required name)
         """Create the toolbar toggle and the (hidden) dock. Called on load."""
@@ -107,12 +108,18 @@ class DrainworksPlugin:
 
         from drainworks_plugin.pipeline.tasks import ImportTask
 
+        from drainworks_plugin.ui.busy import start_busy
+
         self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
                                        on_done=self._import_done)
+        self._busy = start_busy(self.iface, "Importeren…")
         QgsApplication.taskManager().addTask(self._import_task)
 
     def _import_done(self, task):
         """Main-thread callback after the import task finishes."""
+        from drainworks_plugin.ui.busy import stop_busy
+        stop_busy(self.iface, self._busy)
+        self._busy = None
         self._import_task = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {task.error}")
