@@ -115,4 +115,14 @@ def compute_berging(gpkg_path, resolution="accurate") -> int:
             window = pts
         updates[seg["fid"]] = _aggregate(window)
     update_segments_berging(gpkg_path, updates)
+    from drainworks_plugin.io.geopackage_store import (
+        berging_fingerprint, read_meta, total_lost_volume, write_meta)
+    enrich_fp = read_meta(gpkg_path).get("enrich_fingerprint")
+    sinks = sorted(m.code for m in manholes.values() if m.is_sink)
+    write_meta(gpkg_path, {
+        "berging_fingerprint": berging_fingerprint(enrich_fp, sinks),
+        "berging_settings": {"resolution": resolution},
+        "berging_total": total_lost_volume(gpkg_path),
+        "sinks": sinks,
+    })
     return len(segments)
