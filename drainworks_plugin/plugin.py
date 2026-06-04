@@ -23,6 +23,7 @@ class DrainworksPlugin:
         self.pipe_layer = None
         self.layer_group = None
         self.gpkg_path = None
+        self._import_task = None  # keeps the running ImportTask alive
 
     def initGui(self):  # noqa: N802 (QGIS-required name)
         """Create the toolbar toggle and the (hidden) dock. Called on load."""
@@ -93,19 +94,39 @@ class DrainworksPlugin:
         input_path, meas_path, gpkg_path = dialog.values()
         if not input_path:
             return
-        lower = input_path.lower()
-        try:
-            if lower.endswith(".gpkg"):
-                gpkg_out = input_path
-            else:
-                from drainworks_plugin.io.import_controller import import_to_base
-                import_to_base(input_path, meas_path or None, gpkg_path)
-                gpkg_out = gpkg_path
-            from drainworks_plugin.io.import_controller import load_pipeline_layers
-            manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
-        except Exception as exc:  # surface to the user, don't crash QGIS
-            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
+        # Opening an existing GeoPackage is cheap (no parsing) -> load directly.
+        if input_path.lower().endswith(".gpkg"):
+            try:
+                self._load_and_show(input_path)
+            except Exception as exc:  # surface to the user, don't crash QGIS
+                self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
             return
+        # Parsing RIBX/SUFRIB + writing the base GeoPackage is heavy -> run it in a
+        # QgsTask (progress bar, no GUI freeze); load the layers in the callback.
+        from qgis.core import QgsApplication
+
+        from drainworks_plugin.pipeline.tasks import ImportTask
+
+        self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
+                                       on_done=self._import_done)
+        QgsApplication.taskManager().addTask(self._import_task)
+
+    def _import_done(self, task):
+        """Main-thread callback after the import task finishes."""
+        self._import_task = None
+        if task.error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {task.error}")
+            return
+        try:
+            self._load_and_show(str(task.result))
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
+
+    def _load_and_show(self, gpkg_out):
+        """Load the GeoPackage layers, zoom, and hand them to the dock."""
+        from drainworks_plugin.io.import_controller import load_pipeline_layers
+
+        manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.layer_group = group
