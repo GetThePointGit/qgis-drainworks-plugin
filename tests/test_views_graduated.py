@@ -40,3 +40,25 @@ def test_pipe_color_default_stays_single_symbol():
         "pipes", "memory")
     apply_pipe_style(layer, PIPE_COLOR_DEFAULT, PIPE_WIDTH_DEFAULT, PIPE_LABEL_NONE)
     assert isinstance(layer.renderer(), QgsSingleSymbolRenderer)
+
+
+def test_segment_style_by_water_depth_uses_graduated_renderer():
+    _qgis()
+    from qgis.core import (QgsFeature, QgsGeometry, QgsGraduatedSymbolRenderer,
+                           QgsPointXY, QgsVectorLayer)
+    from drainworks_plugin.styling.views import apply_segment_style, SEGMENT_COLOR_DEPTH
+
+    layer = QgsVectorLayer(
+        "LineString?crs=EPSG:28992&field=flooded_pct:double&field=water_level:double"
+        "&field=water_depth_max:double", "segments", "memory")
+    for v in (0.1, 0.4, 0.9):
+        f = QgsFeature(layer.fields())
+        f.setAttribute("water_depth_max", v)
+        f.setGeometry(QgsGeometry.fromPolylineXY([QgsPointXY(0, 0), QgsPointXY(1, 0)]))
+        layer.dataProvider().addFeature(f)
+    layer.updateExtents()
+
+    apply_segment_style(layer, SEGMENT_COLOR_DEPTH)
+    r = layer.renderer()
+    assert isinstance(r, QgsGraduatedSymbolRenderer)
+    assert r.classAttribute() == "water_depth_max"

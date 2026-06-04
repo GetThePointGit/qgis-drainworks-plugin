@@ -144,3 +144,26 @@ def apply_manhole_style(layer, color_mode, label_mode):
     }.get(label_mode)
     _apply_label(layer, label_expr)
     layer.triggerRepaint()
+
+
+# Segment colour modes.
+SEGMENT_COLOR_FLOODED = "flooded"   # vullingsgraad
+SEGMENT_COLOR_WATER = "water"       # waterhoogte
+SEGMENT_COLOR_DEPTH = "depth"       # max. waterdiepte
+
+
+def apply_segment_style(layer, color_mode):
+    """Colour the segments layer by flooded_pct, water_level, or water_depth_max."""
+    field = {SEGMENT_COLOR_WATER: "water_level",
+             SEGMENT_COLOR_DEPTH: "water_depth_max"}.get(color_mode)
+    if field is None:
+        from drainworks_plugin.styling.symbology import style_segments
+        style_segments(layer)   # default graduated flooded_pct look
+        return
+    mn, mx = _minmax(layer, field)
+
+    def _seg_line(color):
+        return QgsLineSymbol.createSimple({"color": color, "width": "1.6"})
+
+    layer.setRenderer(_graduated(field, mn, mx, _seg_line))
+    layer.triggerRepaint()
