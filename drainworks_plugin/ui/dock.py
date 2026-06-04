@@ -393,7 +393,8 @@ class DrainworksDock(QDockWidget):
         out = {}
         for code, points in read_profile(self.gpkg_path).items():
             out[code] = [{"dist": p.dist, "bob": p.bob, "obb": p.obb,
-                          "flooded_pct": None, "water_level": None} for p in points]
+                          "flooded_pct": p.flooded_pct, "water_level": p.water_level}
+                         for p in points]
         return out
 
     def _reload_profile(self):
@@ -562,6 +563,7 @@ class DrainworksDock(QDockWidget):
         else:
             self.btn_traj_delmode.setChecked(False)
             self._clear_tool()
+        self._update_side_view()  # switch BOB-live (on) <-> measured (off)
 
     def _on_sink_map_toggled(self, checked):
         if checked:
@@ -578,9 +580,10 @@ class DrainworksDock(QDockWidget):
         canvas = self.iface.mapCanvas()
         if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
-        # ctrl-click delete + drag-move only apply to trajectory editing, not sink-pick.
+        # ctrl/right-click delete only applies to trajectory editing, not sink-pick.
+        # (Moving a point is done via the placement model: select it, then click.)
         ctrl_pick = self._on_ctrl_pick if editing else None
-        drag = self._on_drag if editing else None
+        drag = None
         self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
                                           on_move=self._on_map_hover,
                                           on_ctrl_pick=ctrl_pick, on_drag=drag)
@@ -669,12 +672,6 @@ class DrainworksDock(QDockWidget):
             self.active_code = self.waypoints[-1] if self.waypoints else None
             self._commit_waypoints()
 
-    def _on_drag(self, from_code, to_code):
-        if from_code in self.waypoints and to_code not in self.waypoints:
-            self.waypoints[self.waypoints.index(from_code)] = to_code
-            self.active_code = to_code
-            self._commit_waypoints()
-
     def _on_pick(self, code):
         if self.btn_traj_delmode.isChecked():
             if code in self.waypoints:
@@ -683,39 +680,33 @@ class DrainworksDock(QDockWidget):
                 self.btn_traj_delmode.setChecked(False)
                 self._commit_waypoints()
             return
-        self._insert_waypoint(code)
-        self.active_code = code
-        self._commit_waypoints()
+        self._place(code)
 
-    def _insert_waypoint(self, code):
-        """Insert a put at the cheapest position: a tussenpunt mid-route, or
-        extend at an end, whichever adds the least route length."""
-        wps = self.waypoints
-        if code in wps:
+    def _place(self, code):
+        """Apply the placement model (select/insert/extend/move) for clicking `code`."""
+        from drainworks_plugin.trajectory.placement import place_waypoint
+        result = place_waypoint(self.network, self.waypoints, self.active_code, code)
+        if result is None:
+            self.iface.messageBar().pushWarning(
+                "Drainworks", "Punt niet bereikbaar vanaf het traject.")
             return
-        if len(wps) < 2:
-            wps.append(code)
+        new_wps, new_active = result
+        changed = new_wps != self.waypoints
+        self.waypoints = new_wps
+        self.active_code = new_active
+        self._commit_waypoints(push=changed)
+
+    def _preview_side_view(self, code):
+        """Live BOB-based side-view of the trajectory as it would become with `code`."""
+        if self.network is None:
             return
-
-        def leg(a, b):
-            try:
-                return self.network.shortest_path(a, b).total_length
-            except ValueError:
-                return float("inf")
-
-        # Default: append at the end.
-        best_cost = leg(wps[-1], code)
-        best_pos = len(wps)
-        # Prepend at the start.
-        cost = leg(code, wps[0])
-        if cost < best_cost:
-            best_cost, best_pos = cost, 0
-        # Insert between two existing waypoints.
-        for i in range(len(wps) - 1):
-            cost = leg(wps[i], code) + leg(code, wps[i + 1]) - leg(wps[i], wps[i + 1])
-            if cost < best_cost:
-                best_cost, best_pos = cost, i + 1
-        wps.insert(best_pos, code)
+        preview = self.waypoints
+        if code is not None:
+            from drainworks_plugin.trajectory.placement import place_waypoint
+            placed = place_waypoint(self.network, self.waypoints, self.active_code, code)
+            if placed is not None:
+                preview = placed[0]
+        self._render_side_view(preview, light=True)
 
     def _on_map_hover(self, point):
         """Highlight the nearest put and drive the graph cursor from the route."""
@@ -726,11 +717,15 @@ class DrainworksDock(QDockWidget):
         # Nearest manhole within ~18 px -> highlight (the pick target).
         tol = mupp * 18
         nearest = None
-        for xy in self.manhole_points.values():
+        nearest_code = None
+        for code, xy in self.manhole_points.items():
             d = ((xy[0] - px) ** 2 + (xy[1] - py) ** 2) ** 0.5
             if d <= tol:
-                tol, nearest = d, xy
+                tol, nearest, nearest_code = d, xy, code
         self.graphics.set_hover(QgsPointXY(*nearest) if nearest else None)
+        # While building a trajectory, live-preview it from the BOB lines.
+        if self.btn_traj.isChecked():
+            self._preview_side_view(nearest_code)
         # Reverse hover: project onto the route -> show the graph cursor.
         if self.route_polyline:
             dist, offset = self._project_on_route(px, py)
@@ -788,27 +783,37 @@ class DrainworksDock(QDockWidget):
         self.graphics.set_active(QgsPointXY(*xy) if xy else None)
 
     def _update_side_view(self):
-        if self.network is None or len(self.waypoints) < 2:
+        self._render_side_view(self.waypoints, light=self.btn_traj.isChecked())
+
+    def _render_side_view(self, waypoints, light):
+        if self.network is None or len(waypoints) < 2:
             self.side_view.clear()
             self.volume_label.setText("")
             self.route_polyline = []
             return
         try:
-            route = self.network.route(self.waypoints)
+            route = self.network.route(waypoints)
         except ValueError as exc:
             self.iface.messageBar().pushWarning("Drainworks", str(exc))
             self.side_view.clear()
             self.volume_label.setText("")
             self.route_polyline = []
             return
-        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe,
+        measurements = {} if light else self.measurements_by_pipe
+        profile = build_profile(route, self.pipes_by_code, measurements,
                                 manholes_by_code=self._manholes_by_code)
         self.side_view.show_profile(profile)
         self.route_polyline = self._build_route_polyline(route)
+        if light:
+            self.volume_label.setText("")
+            return
         from drainworks_plugin.sideview.berging import route_berging
         segments_by_pipe = self._read_segments_by_pipe()
         water, volume = route_berging(route, self.pipes_by_code, segments_by_pipe)
-        self.side_view.show_water(water)
+        # Accurate berging carries per-point water on the profile (show_profile draws
+        # it); only draw the segment overlay when there is no per-point water (fast).
+        if not any(v.water_level is not None for v in profile.vertices):
+            self.side_view.show_water(water)
         self.volume_label.setText(f"Verloren berging: {volume:.2f} m³" if volume else "")
 
     def _read_segments_by_pipe(self):
