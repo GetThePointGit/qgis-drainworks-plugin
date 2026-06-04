@@ -34,7 +34,6 @@ class Profile:
 
     vertices: list = field(default_factory=list)
     observations: list = field(default_factory=list)
-    pipe_spans: list = field(default_factory=list)  # (pipe_code, start_dist, end_dist)
     ideal: list = field(default_factory=list)       # (dist, bob) straight bob1->bob2 line
     manholes: list = field(default_factory=list)    # (dist, manhole_code) along the route
     manhole_levels: list = field(default_factory=list)  # (dist, code, bottom_bob, ground_level)
@@ -114,8 +113,6 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
             ideal_end = pipe.bob2 if forward else pipe.bob1
             profile.ideal.append((span_start, ideal_start))
             profile.ideal.append((span_end, ideal_end))
-
-        profile.pipe_spans.append((pipe_code, span_start, span_end))
 
         for obs in observations_by_pipe.get(pipe_code, []):
             if obs.distance is None:

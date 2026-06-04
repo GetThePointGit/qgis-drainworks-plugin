@@ -61,12 +61,3 @@ def style_segments(layer) -> None:
     renderer = QgsGraduatedSymbolRenderer("flooded_pct", ranges)
     layer.setRenderer(renderer)
     layer.triggerRepaint()
-
-
-def style_profile(layer) -> None:
-    """Render the detailed profile points as small grey dots."""
-    symbol = QgsMarkerSymbol.createSimple(
-        {"name": "circle", "color": "#9e9e9e", "size": "1.4",
-         "outline_style": "no"})
-    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
-    layer.triggerRepaint()

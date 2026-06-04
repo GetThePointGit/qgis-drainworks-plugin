@@ -66,7 +66,6 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.trajectory.history import WaypointHistory
         self.history = WaypointHistory()
         self.sinks = set()
-        self.computed_sinks = None  # sinks at the last berging computation
         from drainworks_plugin.pipeline.state import PipelineState
         self.state = PipelineState()
         self.active_task = None  # the running QgsTask, if any
@@ -514,7 +513,6 @@ class DrainworksDock(QDockWidget):
             return
         from drainworks_plugin.io.geopackage_store import total_lost_volume
         self.state.mark_berging_computed()
-        self.computed_sinks = set(self.sinks)
         self.loss_total.setText(
             f"Totaal verloren berging: {total_lost_volume(self.gpkg_path):.2f} m³")
         self.plugin.reload_pipeline_layers()
@@ -662,10 +660,9 @@ class DrainworksDock(QDockWidget):
         # ctrl/right-click delete only applies to trajectory editing, not sink-pick.
         # (Moving a point is done via the placement model: select it, then click.)
         ctrl_pick = self._on_ctrl_pick if editing else None
-        drag = None
         self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
                                           on_move=self._on_map_hover,
-                                          on_ctrl_pick=ctrl_pick, on_drag=drag)
+                                          on_ctrl_pick=ctrl_pick)
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
@@ -977,10 +974,6 @@ class DrainworksDock(QDockWidget):
         if self.graphics is not None:
             self.graphics.set_hover(None)
         self._last_hover_code = None
-
-    def clear_graphics(self):
-        if self.graphics is not None:
-            self.graphics.clear()
 
     def teardown(self):
         """Release the map tool and remove all canvas items (for plugin unload)."""
