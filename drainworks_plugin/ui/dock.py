@@ -6,7 +6,6 @@ delete button), and the embedded pyqtgraph side-view. It also owns the
 trajectory state and draws the route + lettered markers on the canvas.
 """
 
-import math
 import os
 import string
 
@@ -39,13 +38,6 @@ def _icon(name):
     return QIcon(os.path.join(ICONS, name))
 
 
-def _flooded_area(point):
-    """Flooded cross-section area (m²) of a measurement point (circular pipe)."""
-    pct = point.get("flooded_pct") or 0.0
-    diameter = (point["obb"] - point["bob"])
-    return pct * math.pi * (diameter / 2.0) ** 2
-
-
 class DrainworksDock(QDockWidget):
     """Main control panel; docked on the right."""
 
@@ -64,6 +56,7 @@ class DrainworksDock(QDockWidget):
         self.pipe_geoms = {}
         self.manhole_points = {}
         self.measurements_by_pipe = {}
+        self._manholes_by_code = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
         from drainworks_plugin.trajectory.history import WaypointHistory
@@ -193,7 +186,6 @@ class DrainworksDock(QDockWidget):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(4, 4, 4, 4)
         header = QHBoxLayout()
-        header.addWidget(QLabel("Langsprofiel:"))
         header.addStretch()
         self.volume_label = QLabel("")
         self.volume_label.setStyleSheet("color: #2c7fb8; font-weight: bold;")
@@ -251,6 +243,7 @@ class DrainworksDock(QDockWidget):
 
         # Sink combo + existing sinks.
         manholes = read_manholes(self.gpkg_path)
+        self._manholes_by_code = {m.code: m for m in manholes}
         self.sink_combo.clear()
         self.sink_combo.addItems(sorted(m.code for m in manholes))
         self.sinks = {m.code for m in manholes if m.is_sink}
@@ -669,10 +662,24 @@ class DrainworksDock(QDockWidget):
             self.volume_label.setText("")
             self.route_polyline = []
             return
-        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe)
+        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe,
+                                manholes_by_code=self._manholes_by_code)
         self.side_view.show_profile(profile)
         self.route_polyline = self._build_route_polyline(route)
-        self._update_volume(route)
+        from drainworks_plugin.sideview.berging import route_berging
+        segments_by_pipe = self._read_segments_by_pipe()
+        water, volume = route_berging(route, self.pipes_by_code, segments_by_pipe)
+        self.side_view.show_water(water)
+        self.volume_label.setText(f"Verloren berging: {volume:.2f} m³" if volume else "")
+
+    def _read_segments_by_pipe(self):
+        if not self.gpkg_path:
+            return {}
+        from drainworks_plugin.io.geopackage_store import read_segments
+        by_pipe = {}
+        for seg in read_segments(self.gpkg_path):
+            by_pipe.setdefault(seg["pipe_code"], []).append(seg)
+        return by_pipe
 
     def _build_route_polyline(self, route):
         """Return [(cumulative_dist, QgsPointXY)] along the oriented route geometry."""
@@ -718,31 +725,6 @@ class DrainworksDock(QDockWidget):
                 return QgsPointXY(p0.x() + (p1.x() - p0.x()) * t,
                                   p0.y() + (p1.y() - p0.y()) * t)
         return poly[-1][1]
-
-    def _update_volume(self, route):
-        """Show the lost-storage volume integrated along the route."""
-        volume = self._route_lost_volume(route)
-        if volume is None:
-            self.volume_label.setText("")
-        else:
-            self.volume_label.setText(f"Verloren berging: {volume:.2f} m³")
-
-    def _route_lost_volume(self, route):
-        """Integrate flooded cross-section area over the route (m³), or None."""
-        any_flood = False
-        total = 0.0
-        for code in route.pipe_codes:
-            points = self.measurements_by_pipe.get(code) or []
-            for a, b in zip(points, points[1:]):
-                seg = b["dist"] - a["dist"]
-                if seg <= 0:
-                    continue
-                area_a = _flooded_area(a)
-                area_b = _flooded_area(b)
-                if a.get("flooded_pct") is not None or b.get("flooded_pct") is not None:
-                    any_flood = True
-                total += 0.5 * (area_a + area_b) * seg
-        return total if any_flood else None
 
     # ------------------------------------------------------------ teardown
     def deactivate_tool(self):

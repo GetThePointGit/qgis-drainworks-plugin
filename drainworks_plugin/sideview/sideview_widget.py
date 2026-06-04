@@ -62,6 +62,7 @@ class SideViewWidget(QWidget):
     def show_profile(self, profile) -> None:
         """Render a Profile."""
         self.plot.clear()
+        self._last_profile = profile
 
         dists = [v.dist for v in profile.vertices]
         bobs = [v.bob for v in profile.vertices]
@@ -94,15 +95,17 @@ class SideViewWidget(QWidget):
             self.plot.plot(dists, water, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine),
                            name="Waterpeil")
 
-        # Manholes as vertical grey lines with the put code at the top.
-        for dist, code in getattr(profile, "manholes", []):
-            line = pg.InfiniteLine(
-                pos=dist, angle=90,
-                pen=pg.mkPen("#398a39", width=1),
-                label=code, labelOpts={"position": 0.08, "color": "#398a39",
-                                       "rotateAxis": (1, 0)},
-            )
-            self.plot.addItem(line)
+        # Each put: a vertical line from invert (bottom) up to maaiveld (ground),
+        # drawn so it does not affect auto-zoom.
+        show_codes = getattr(self, "_show_putcodes", True)
+        for dist, code, bottom, ground in getattr(profile, "manhole_levels", []):
+            top = ground if ground is not None else bottom
+            item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=pg.mkPen("#398a39", width=2))
+            self.plot.addItem(item, ignoreBounds=True)
+            if show_codes:
+                text = pg.TextItem(code, color="#398a39", anchor=(0.5, 1.1))
+                text.setPos(dist, top)
+                self.plot.addItem(text, ignoreBounds=True)
 
         # Observation markers as vertical dotted lines with labels.
         for marker in profile.observations:
@@ -114,6 +117,39 @@ class SideViewWidget(QWidget):
             self.plot.addItem(line)
 
         # Re-add the hover cursor (plot.clear() removed it).
+        self._cursor.hide()
+        self.plot.addItem(self._cursor)
+        self.plot.autoRange()
+
+    def show_water(self, water_points):
+        """Draw the verloren-berging water fill from [(dist, level)] points."""
+        if not water_points or getattr(self, "_last_profile", None) is None:
+            return
+        verts = self._last_profile.vertices
+        if not verts:
+            return
+        dists = [v.dist for v in verts]
+        bobs = [v.bob for v in verts]
+        wd = [d for d, _ in water_points]
+        wl = [lvl for _, lvl in water_points]
+        bob_curve = pg.PlotCurveItem(dists, bobs)
+        water_curve = pg.PlotCurveItem(wd, wl)
+        fill = pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(44, 127, 184, 120))
+        self.plot.addItem(fill)
+        self.plot.plot(wd, wl, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine), name="Waterpeil")
+
+    def show_light_line(self, bob_points, manhole_levels=None):
+        """Fast live render: just the pipe BOB line + put lines."""
+        self.plot.clear()
+        if bob_points:
+            xs = [d for d, _ in bob_points]
+            ys = [b for _, b in bob_points]
+            self.plot.plot(xs, ys, pen=pg.mkPen("#cc8400", width=1, style=Qt.DashLine),
+                           name="BOB leiding (recht)")
+        for dist, code, bottom, ground in (manhole_levels or []):
+            top = ground if ground is not None else bottom
+            item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=pg.mkPen("#398a39", width=2))
+            self.plot.addItem(item, ignoreBounds=True)
         self._cursor.hide()
         self.plot.addItem(self._cursor)
         self.plot.autoRange()
