@@ -62,3 +62,16 @@ def test_accurate_fills_water_depth_max(tmp_gpkg):
     assert any((s.get("water_depth_max") or 0) > 0 for s in segs)
     # depth is never negative
     assert all((s.get("water_depth_max") or 0) >= 0 for s in segs)
+
+
+def test_berging_writes_meta(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import (berging_fingerprint, read_meta,
+                                                       total_lost_volume)
+    _setup(tmp_gpkg)
+    compute_berging(tmp_gpkg, resolution="fast")
+    meta = read_meta(tmp_gpkg)
+    assert meta["berging_settings"] == {"resolution": "fast"}
+    assert meta["sinks"] == ["P1", "P2"]
+    assert round(meta["berging_total"], 4) == round(total_lost_volume(tmp_gpkg), 4)
+    assert meta["berging_fingerprint"] == berging_fingerprint(
+        meta["enrich_fingerprint"], ["P1", "P2"])

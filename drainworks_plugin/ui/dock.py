@@ -67,6 +67,7 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.pipeline.state import PipelineState
         self.state = PipelineState()
         self.active_task = None  # the running QgsTask, if any
+        self._busy = None        # the messageBar busy item, if any
         self.map_tool = None
         self.graphics = None
         from drainworks_plugin.styling import views as _v
@@ -372,9 +373,42 @@ class DrainworksDock(QDockWidget):
         self._update_sink_markers()
         self._rebuild()
         self._set_data_enabled(True)
-        self.enrich_summary.setText("")
-        self.loss_total.setText("")
-        self.state.mark_imported()
+        self._restore_pipeline_state()
+
+    def _restore_pipeline_state(self):
+        """Set step state + summaries + settings from the gpkg's dw_meta + fingerprint."""
+        from drainworks_plugin.io.geopackage_store import (
+            base_fingerprint, berging_fingerprint, read_meta, read_segments)
+
+        meta = read_meta(self.gpkg_path)
+        fingerprint = base_fingerprint(self.gpkg_path)
+        enriched = bool(read_segments(self.gpkg_path))
+        enrich_fresh = enriched and meta.get("enrich_fingerprint") == fingerprint
+        berging_ran = "berging_total" in meta
+        berging_fresh = (
+            berging_ran and enrich_fresh
+            and meta.get("berging_fingerprint")
+            == berging_fingerprint(meta.get("enrich_fingerprint"), self.sinks))
+        self.state.restore(enrich_ran=enriched, enrich_fresh=enrich_fresh,
+                           berging_ran=berging_ran, berging_fresh=berging_fresh)
+
+        s = meta.get("enrich_summary") or {}
+        if enriched and enrich_fresh:
+            self.enrich_summary.setText(
+                f"{s.get('n_segments', 0)} segmenten · {s.get('n_errors', 0)} fouten · "
+                f"{s.get('n_warnings', 0)} waarschuwingen")
+        else:
+            self.enrich_summary.setText("")
+        if berging_fresh:
+            self.loss_total.setText(
+                f"Totaal verloren berging: {meta.get('berging_total', 0.0):.2f} m³")
+        else:
+            self.loss_total.setText("")
+
+        if meta.get("enrich_settings"):
+            self._save_json_settings(self.ENRICH_SETTINGS_KEY, meta["enrich_settings"])
+        if meta.get("berging_settings"):
+            self._save_json_settings(self.BERGING_SETTINGS_KEY, meta["berging_settings"])
         self._refresh_step_buttons()
 
     # ------------------------------------------------------------ actions
@@ -418,6 +452,9 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _enrich_done(self, task):
+        from drainworks_plugin.ui.busy import stop_busy
+        stop_busy(self.iface, self._busy)
+        self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
             self.active_task = None
@@ -459,6 +496,9 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _loss_done(self, task):
+        from drainworks_plugin.ui.busy import stop_busy
+        stop_busy(self.iface, self._busy)
+        self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
             self.active_task = None
@@ -480,7 +520,10 @@ class DrainworksDock(QDockWidget):
         """Submit a QgsTask to the task manager, disabling the step buttons."""
         from qgis.core import QgsApplication
 
+        from drainworks_plugin.ui.busy import start_busy
+
         self.active_task = task
+        self._busy = start_busy(self.iface, task.description() + "…")
         for btn in (self.btn_enrich, self.btn_loss):
             btn.setEnabled(False)
         QgsApplication.taskManager().addTask(task)

@@ -42,3 +42,17 @@ def test_enrich_label_and_berging_label():
     s.mark_base_edited()
     assert s.enrich_label() == "Verrijk opnieuw"
     assert s.berging_label() == "Herbereken"
+
+
+def test_restore_sets_flags():
+    s = PipelineState()
+    s.restore(enrich_ran=True, enrich_fresh=True, berging_ran=True, berging_fresh=True)
+    assert s.enrich_ran and not s.enrich_stale
+    assert s.berging_ran and not s.berging_stale
+
+    s.restore(enrich_ran=True, enrich_fresh=False, berging_ran=True, berging_fresh=False)
+    assert s.enrich_stale and s.berging_stale      # ran but no longer fresh
+
+    s.restore(enrich_ran=False, enrich_fresh=False, berging_ran=False, berging_fresh=False)
+    assert s.enrich_stale and s.berging_stale      # not run -> needs running
+    assert s.enrich_label() == "Verrijk basisdata"  # not run -> plain label
