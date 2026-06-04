@@ -100,6 +100,54 @@ def load_geopackage_layers(gpkg_path):
     return manhole_layer, pipe_layer, group
 
 
+def load_pipeline_layers(gpkg_path):
+    """Load manholes/pipes (+ profile/segments if present) into a styled group.
+
+    Returns ``(manhole_layer, pipe_layer, group, segments_layer_or_None)``.
+    """
+    from drainworks_plugin.styling.symbology import (
+        style_manholes,
+        style_pipes,
+        style_profile,
+        style_segments,
+    )
+
+    gpkg_path = Path(gpkg_path)
+    pipe_layer = QgsVectorLayer(f"{gpkg_path}|layername=pipes", "Leidingen", "ogr")
+    manhole_layer = QgsVectorLayer(f"{gpkg_path}|layername=manholes", "Putten", "ogr")
+    if not pipe_layer.isValid() or not manhole_layer.isValid():
+        raise RuntimeError(f"Could not load layers from {gpkg_path}")
+    style_pipes(pipe_layer)
+    style_manholes(manhole_layer)
+
+    project = QgsProject.instance()
+    root = project.layerTreeRoot()
+    existing = root.findGroup(gpkg_path.stem)
+    if existing is not None:
+        for child in list(existing.findLayers()):
+            project.removeMapLayer(child.layerId())
+        root.removeChildNode(existing)
+    group = root.insertGroup(0, gpkg_path.stem)
+
+    segments_layer = QgsVectorLayer(f"{gpkg_path}|layername=segments", "Segmenten", "ogr")
+    profile_layer = QgsVectorLayer(f"{gpkg_path}|layername=profile", "Profielpunten", "ogr")
+    if segments_layer.isValid():
+        style_segments(segments_layer)
+    if profile_layer.isValid():
+        style_profile(profile_layer)
+
+    # Draw order top->bottom: manholes, pipes, segments, profile.
+    ordered = [manhole_layer, pipe_layer]
+    if segments_layer.isValid():
+        ordered.append(segments_layer)
+    if profile_layer.isValid():
+        ordered.append(profile_layer)
+    for layer in ordered:
+        project.addMapLayer(layer, False)
+        group.addLayer(layer)
+    return manhole_layer, pipe_layer, group, (segments_layer if segments_layer.isValid() else None)
+
+
 def add_layer_to_group(layer, group, on_top=True):
     """Add an already-created layer into ``group`` (or the root if group is None)."""
     project = QgsProject.instance()
