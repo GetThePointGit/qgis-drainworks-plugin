@@ -80,60 +80,66 @@ class DrainworksDock(QDockWidget):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
-        # Bottom dock: narrow controls on the left, longitudinal profile on the
-        # right, split so the user can drag the divider.
-        splitter = QSplitter(Qt.Horizontal)
+        from qgis.gui import QgsCollapsibleGroupBox
 
-        # --- Left column: controls (kept narrow). ---
+        splitter = QSplitter(Qt.Horizontal)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(4, 4, 4, 4)
 
+        # --- Main toolbar. ---
         actions = QHBoxLayout()
         self.btn_import = self._tool_button("Importeren", "import.svg", self._on_import)
         self.btn_traj = self._tool_button("Traject", "trajectory.svg", self._on_traj_toggled,
                                           checkable=True)
-        self.btn_downstream = self._tool_button("Stroomafw.", "trajectory.svg",
-                                                self._on_downstream)
         self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
-        actions.addWidget(self.btn_import)
-        actions.addWidget(self.btn_traj)
-        actions.addWidget(self.btn_downstream)
-        actions.addWidget(self.btn_style)
+        self.btn_settings = self._tool_button("Instellingen", "lost_capacity.svg",
+                                              self._on_sideview_settings)
+        for b in (self.btn_import, self.btn_traj, self.btn_style, self.btn_settings):
+            actions.addWidget(b)
         actions.addStretch()
         left_layout.addLayout(actions)
 
-        # --- Pipeline step buttons (import -> enrich -> berging). ---
-        steps = QHBoxLayout()
-        self.btn_enrich = self._tool_button("Verrijk basisdata", "lost_capacity.svg",
-                                            self._on_enrich)
-        steps.addWidget(self.btn_enrich)
-        steps.addStretch()
-        left_layout.addLayout(steps)
+        # --- File info. ---
+        self.file_label = QLabel("Geen data geladen")
+        self.file_label.setStyleSheet("color: #666;")
+        self.file_label.setWordWrap(True)
+        left_layout.addWidget(self.file_label)
 
-        from qgis.PyQt.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox
-        settings = QHBoxLayout()
-        self.chk_correct_bob = QCheckBox("Corrigeer BOB")
-        self.chk_correct_bob.setChecked(True)
-        self.cmb_resolution = QComboBox()
-        self.cmb_resolution.addItems(["nauwkeurig", "snel"])
-        settings.addWidget(self.chk_correct_bob)
-        settings.addWidget(QLabel("Resolutie:"))
-        settings.addWidget(self.cmb_resolution)
-        left_layout.addLayout(settings)
+        # --- Card 1: enrich. ---
+        card1 = QgsCollapsibleGroupBox("1. Basisdata verrijken")
+        c1 = QVBoxLayout(card1)
+        gear1 = QHBoxLayout()
+        gear1.addStretch()
+        self.btn_enrich_settings = QToolButton()
+        self.btn_enrich_settings.setText("⚙")
+        self.btn_enrich_settings.setToolTip("Instellingen verrijken")
+        self.btn_enrich_settings.clicked.connect(self._on_enrich_settings)
+        gear1.addWidget(self.btn_enrich_settings)
+        c1.addLayout(gear1)
+        self.btn_enrich = QPushButton(_icon("lost_capacity.svg"), "Verrijk basisdata")
+        self.btn_enrich.clicked.connect(self._on_enrich)
+        c1.addWidget(self.btn_enrich)
+        self.enrich_status = QLabel("")
+        c1.addWidget(self.enrich_status)
+        self.enrich_summary = QLabel("")
+        self.enrich_summary.setStyleSheet("color: #666;")
+        self.enrich_summary.setWordWrap(True)
+        c1.addWidget(self.enrich_summary)
+        left_layout.addWidget(card1)
 
-        seg_settings = QHBoxLayout()
-        self.spn_min_segment = QDoubleSpinBox(); self.spn_min_segment.setRange(0.1, 50.0)
-        self.spn_min_segment.setValue(1.0); self.spn_min_segment.setSuffix(" m")
-        self.spn_bob_segment = QDoubleSpinBox(); self.spn_bob_segment.setRange(0.5, 100.0)
-        self.spn_bob_segment.setValue(5.0); self.spn_bob_segment.setSuffix(" m")
-        seg_settings.addWidget(QLabel("Segment:"))
-        seg_settings.addWidget(self.spn_min_segment)
-        seg_settings.addWidget(QLabel("BOB-seg:"))
-        seg_settings.addWidget(self.spn_bob_segment)
-        left_layout.addLayout(seg_settings)
-
-        left_layout.addWidget(QLabel("Sinks (uitstroompunten):"))
+        # --- Card 2: berging. ---
+        card2 = QgsCollapsibleGroupBox("2. Verloren berging")
+        c2 = QVBoxLayout(card2)
+        gear2 = QHBoxLayout()
+        gear2.addStretch()
+        self.btn_loss_settings = QToolButton()
+        self.btn_loss_settings.setText("⚙")
+        self.btn_loss_settings.setToolTip("Instellingen verloren berging")
+        self.btn_loss_settings.clicked.connect(self._on_loss_settings)
+        gear2.addWidget(self.btn_loss_settings)
+        c2.addLayout(gear2)
+        c2.addWidget(QLabel("Sinks (uitstroompunten):"))
         sink_row = QHBoxLayout()
         self.sink_combo = ExtendedCombo()
         add_sink = QToolButton()
@@ -147,23 +153,35 @@ class DrainworksDock(QDockWidget):
         sink_row.addWidget(self.sink_combo, 1)
         sink_row.addWidget(add_sink)
         sink_row.addWidget(self.btn_sink_map)
-        left_layout.addLayout(sink_row)
-
+        c2.addLayout(sink_row)
         self.sink_table = QTableWidget(0, 2)
         self.sink_table.setHorizontalHeaderLabels(["Sink", ""])
         self.sink_table.verticalHeader().setVisible(False)
         self.sink_table.setColumnWidth(1, 30)
         self.sink_table.setMaximumHeight(120)
-        left_layout.addWidget(self.sink_table)
-
-        self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken berging")
+        c2.addWidget(self.sink_table)
+        self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken verloren berging")
         self.btn_loss.clicked.connect(self._on_loss)
-        left_layout.addWidget(self.btn_loss)
+        c2.addWidget(self.btn_loss)
+        self.loss_status = QLabel("")
+        c2.addWidget(self.loss_status)
+        self.loss_total = QLabel("")
+        self.loss_total.setStyleSheet("color: #2c7fb8; font-weight: bold;")
+        c2.addWidget(self.loss_total)
+        left_layout.addWidget(card2)
 
-        left_layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
+        left_layout.addStretch(1)
+        left.setMaximumWidth(360)
+
+        # --- Right: trajectory bar (above) + longitudinal profile. ---
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+
         self.traj_bar = QWidget()
         traj_layout = QHBoxLayout(self.traj_bar)
         traj_layout.setContentsMargins(0, 0, 0, 0)
+        traj_layout.addWidget(QLabel("Traject:"))
         self.btn_traj_downstream = QPushButton("Stroomafw.")
         self.btn_traj_downstream.clicked.connect(self._on_downstream)
         self.btn_traj_delmode = QPushButton("Verwijdermodus")
@@ -177,26 +195,13 @@ class DrainworksDock(QDockWidget):
         for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
                   self.btn_traj_undo, self.btn_traj_redo):
             traj_layout.addWidget(b)
-        self.traj_bar.setVisible(False)
-        left_layout.addWidget(self.traj_bar)
-        left_layout.addStretch(1)
-        left.setMaximumWidth(340)
-
-        # --- Right: longitudinal profile. ---
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(4, 4, 4, 4)
-        header = QHBoxLayout()
-        header.addStretch()
+        traj_layout.addStretch()
         self.volume_label = QLabel("")
         self.volume_label.setStyleSheet("color: #2c7fb8; font-weight: bold;")
-        header.addWidget(self.volume_label)
-        self.btn_sv_settings = QToolButton()
-        self.btn_sv_settings.setText("⚙")
-        self.btn_sv_settings.setToolTip("Langsprofiel-instellingen")
-        self.btn_sv_settings.clicked.connect(self._on_sideview_settings)
-        header.addWidget(self.btn_sv_settings)
-        right_layout.addLayout(header)
+        traj_layout.addWidget(self.volume_label)
+        self.traj_bar.setVisible(False)
+        right_layout.addWidget(self.traj_bar)
+
         self.side_view = SideViewWidget()
         self.side_view.hovered.connect(self._on_graph_hover)
         right_layout.addWidget(self.side_view, 1)
@@ -205,8 +210,7 @@ class DrainworksDock(QDockWidget):
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([320, 760])
-
+        splitter.setSizes([340, 760])
         self.setWidget(splitter)
         self._set_data_enabled(False)
 
@@ -236,6 +240,44 @@ class DrainworksDock(QDockWidget):
         QgsSettings().setValue(self.SV_SETTINGS_KEY, json.dumps(new.to_dict()))
         self.side_view.apply_settings(new)
 
+    ENRICH_SETTINGS_KEY = "drainworks/enrich"
+    BERGING_SETTINGS_KEY = "drainworks/berging"
+    ENRICH_DEFAULTS = {"correct_bob": True, "min_segment": 1.0, "bob_segment": 5.0}
+    BERGING_DEFAULTS = {"resolution": "accurate"}
+
+    def _load_json_settings(self, key, defaults):
+        import json
+        from qgis.core import QgsSettings
+        raw = QgsSettings().value(key, "", type=str)
+        try:
+            data = json.loads(raw) if raw else {}
+        except ValueError:
+            data = {}
+        merged = dict(defaults)
+        merged.update({k: v for k, v in data.items() if k in defaults})
+        return merged
+
+    def _save_json_settings(self, key, values):
+        import json
+        from qgis.core import QgsSettings
+        QgsSettings().setValue(key, json.dumps(values))
+
+    def _on_enrich_settings(self):
+        from qgis.PyQt.QtWidgets import QDialog
+        from drainworks_plugin.ui.enrich_settings_dialog import EnrichSettingsDialog
+        current = self._load_json_settings(self.ENRICH_SETTINGS_KEY, self.ENRICH_DEFAULTS)
+        dialog = EnrichSettingsDialog(current, self.iface.mainWindow())
+        if dialog.exec_() == QDialog.Accepted:
+            self._save_json_settings(self.ENRICH_SETTINGS_KEY, dialog.values())
+
+    def _on_loss_settings(self):
+        from qgis.PyQt.QtWidgets import QDialog
+        from drainworks_plugin.ui.berging_settings_dialog import BergingSettingsDialog
+        current = self._load_json_settings(self.BERGING_SETTINGS_KEY, self.BERGING_DEFAULTS)
+        dialog = BergingSettingsDialog(current, self.iface.mainWindow())
+        if dialog.exec_() == QDialog.Accepted:
+            self._save_json_settings(self.BERGING_SETTINGS_KEY, dialog.values())
+
     def _tool_button(self, text, icon_name, slot, checkable=False):
         button = QToolButton()
         button.setText(text)
@@ -247,7 +289,8 @@ class DrainworksDock(QDockWidget):
         return button
 
     def _set_data_enabled(self, enabled):
-        for widget in (self.btn_traj, self.btn_downstream, self.btn_style, self.btn_loss,
+        for widget in (self.btn_traj, self.btn_style, self.btn_loss, self.btn_enrich,
+                       self.btn_enrich_settings, self.btn_loss_settings,
                        self.sink_combo, self.btn_sink_map):
             widget.setEnabled(enabled)
 
@@ -265,6 +308,13 @@ class DrainworksDock(QDockWidget):
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.gpkg_path = str(gpkg_path)
+
+        from drainworks_plugin.io.geopackage_store import layer_counts
+        counts = layer_counts(self.gpkg_path)
+        self.file_label.setText(
+            f"Bestand: {os.path.basename(self.gpkg_path)}\n"
+            f"Putten {counts['manholes']} · Leidingen {counts['pipes']} · "
+            f"Metingen {counts['measurements']}")
 
         pipes = read_pipes(self.gpkg_path)
         self.pipes_by_code = {p.code: p for p in pipes}
@@ -293,6 +343,8 @@ class DrainworksDock(QDockWidget):
         self._update_sink_markers()
         self._rebuild()
         self._set_data_enabled(True)
+        self.enrich_summary.setText("")
+        self.loss_total.setText("")
         self.state.mark_imported()
         self._refresh_step_buttons()
 
@@ -327,10 +379,11 @@ class DrainworksDock(QDockWidget):
             return
         from drainworks_plugin.pipeline.tasks import EnrichTask
 
+        s = self._load_json_settings(self.ENRICH_SETTINGS_KEY, self.ENRICH_DEFAULTS)
         task = EnrichTask(self.gpkg_path,
-                          correct_bob=self.chk_correct_bob.isChecked(),
-                          min_segment=self.spn_min_segment.value(),
-                          bob_segment=self.spn_bob_segment.value(),
+                          correct_bob=s["correct_bob"],
+                          min_segment=s["min_segment"],
+                          bob_segment=s["bob_segment"],
                           on_done=self._enrich_done)
         self._run_task(task)
 
@@ -338,10 +391,13 @@ class DrainworksDock(QDockWidget):
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
             self.active_task = None
-            self._refresh_step_buttons()  # re-enable so the user can retry
+            self._refresh_step_buttons()
             return
         self.state.mark_enriched()
         s = task.result or {}
+        self.enrich_summary.setText(
+            f"{s.get('n_segments', 0)} segmenten · {s.get('n_errors', 0)} fouten · "
+            f"{s.get('n_warnings', 0)} waarschuwingen")
         self.plugin.reload_pipeline_layers()
         self._reload_profile()
         self._refresh_step_buttons()
@@ -349,7 +405,7 @@ class DrainworksDock(QDockWidget):
         self.iface.messageBar().pushSuccess(
             "Drainworks",
             f"Verrijkt: {s.get('n_segments', 0)} segmenten, "
-            f"{s.get('n_pipes_with_issues', 0)} leidingen met problemen.")
+            f"{s.get('n_errors', 0)} fouten, {s.get('n_warnings', 0)} waarschuwingen.")
 
     def _on_loss(self):
         """Step 3: compute lost storage with the chosen sinks, off-thread."""
@@ -367,7 +423,8 @@ class DrainworksDock(QDockWidget):
         from drainworks_plugin.pipeline.tasks import BergingTask
 
         set_sinks(self.gpkg_path, self.sinks)
-        resolution = "accurate" if self.cmb_resolution.currentIndex() == 0 else "fast"
+        resolution = self._load_json_settings(self.BERGING_SETTINGS_KEY,
+                                              self.BERGING_DEFAULTS)["resolution"]
         task = BergingTask(self.gpkg_path, resolution=resolution, on_done=self._loss_done)
         self._run_task(task)
 
@@ -375,10 +432,13 @@ class DrainworksDock(QDockWidget):
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
             self.active_task = None
-            self._refresh_step_buttons()  # re-enable so the user can retry
+            self._refresh_step_buttons()
             return
+        from drainworks_plugin.io.geopackage_store import total_lost_volume
         self.state.mark_berging_computed()
         self.computed_sinks = set(self.sinks)
+        self.loss_total.setText(
+            f"Totaal verloren berging: {total_lost_volume(self.gpkg_path):.2f} m³")
         self.plugin.reload_pipeline_layers()
         self._refresh_step_buttons()
         self._rebuild()
@@ -396,15 +456,34 @@ class DrainworksDock(QDockWidget):
         QgsApplication.taskManager().addTask(task)
 
     def _refresh_step_buttons(self):
-        """Re-enable + relabel the step buttons from the PipelineState."""
-        self.btn_enrich.setEnabled(self.gpkg_path is not None)
-        self.btn_loss.setEnabled(self.gpkg_path is not None)
+        """Re-enable + relabel the step buttons and status labels from PipelineState."""
+        has = self.gpkg_path is not None
+        self.btn_enrich.setEnabled(has)
+        self.btn_loss.setEnabled(has)
         self.btn_enrich.setText(self.state.enrich_label())
         self.btn_enrich.setStyleSheet(
-            "color: #c54141; font-weight: bold;" if self.state.enrich_stale and self.state.enrich_ran else "")
+            "color: #c54141; font-weight: bold;"
+            if self.state.enrich_stale and self.state.enrich_ran else "")
         self.btn_loss.setText(self.state.berging_label())
         self.btn_loss.setStyleSheet(
-            "color: #c54141; font-weight: bold;" if self.state.berging_stale and self.state.berging_ran else "")
+            "color: #c54141; font-weight: bold;"
+            if self.state.berging_stale and self.state.berging_ran else "")
+        self._set_status(self.enrich_status, self.state.enrich_ran,
+                         self.state.enrich_stale, "verrijk opnieuw")
+        self._set_status(self.loss_status, self.state.berging_ran,
+                         self.state.berging_stale, "herbereken")
+
+    def _set_status(self, label, ran, stale, action):
+        """Update an up-to-date indicator label."""
+        if not ran:
+            label.setText("nog niet uitgevoerd")
+            label.setStyleSheet("color: #666;")
+        elif stale:
+            label.setText(f"⚠ verouderd — {action}")
+            label.setStyleSheet("color: #c5841f; font-weight: bold;")
+        else:
+            label.setText("✓ actueel")
+            label.setStyleSheet("color: #2e7d32;")
 
     def _on_style(self):
         if self.pipe_layer is None or self.manhole_layer is None:
