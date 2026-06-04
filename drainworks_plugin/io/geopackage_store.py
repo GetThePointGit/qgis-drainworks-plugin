@@ -457,3 +457,29 @@ def read_raw_measurements(path) -> dict:
         result[code] = RawMeasurements(pipe_code=code, measurement_type=mtype,
                                        reverse=reverse, points=points)
     return result
+
+
+def _apply_issues(layer, issues_by_code) -> None:
+    """Set valid/issues on every feature of ``layer`` keyed by its ``code``."""
+    layer.ResetReading()
+    for feat in layer:
+        issues = issues_by_code.get(feat.GetField("code"), [])
+        feat.SetField("valid", 0 if issues else 1)
+        if issues:
+            feat.SetField("issues", "; ".join(issues))
+        else:
+            feat.SetFieldNull("issues")
+        layer.SetFeature(feat)
+
+
+def set_validation(path, validation) -> None:
+    """Write a ``validate_network`` result onto the pipes + manholes layers.
+
+    ``validation`` is ``{"pipes": {code: [issues]}, "manholes": {code: [issues]}}``.
+    """
+    ds = ogr.Open(str(path), update=1)
+    ds.StartTransaction()
+    _apply_issues(ds.GetLayerByName("pipes"), validation.get("pipes", {}))
+    _apply_issues(ds.GetLayerByName("manholes"), validation.get("manholes", {}))
+    ds.CommitTransaction()
+    ds = None
