@@ -158,19 +158,3 @@ class SideViewWidget(QWidget):
         fill = pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(44, 127, 184, 120))
         self.plot.addItem(fill)
         self.plot.plot(wd, wl, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine), name="Waterpeil")
-
-    def show_light_line(self, bob_points, manhole_levels=None):
-        """Fast live render: just the pipe BOB line + put lines."""
-        self.plot.clear()
-        if bob_points:
-            xs = [d for d, _ in bob_points]
-            ys = [b for _, b in bob_points]
-            self.plot.plot(xs, ys, pen=pg.mkPen("#cc8400", width=1, style=Qt.DashLine),
-                           name="BOB leiding (recht)")
-        for dist, code, bottom, ground in (manhole_levels or []):
-            top = ground if ground is not None else bottom
-            item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=pg.mkPen("#398a39", width=2))
-            self.plot.addItem(item, ignoreBounds=True)
-        self._cursor.hide()
-        self.plot.addItem(self._cursor)
-        self.plot.autoRange()

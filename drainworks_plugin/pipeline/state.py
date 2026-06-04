@@ -38,8 +38,7 @@ class PipelineState:
     def mark_base_edited(self):
         """Pipes/manholes were edited: both downstream steps are stale.
 
-        TODO(C2): wire this to the pipes/manholes layer ``editingStopped`` /
-        ``afterCommitChanges`` signals so edits mark enrich/berging stale.
+        Wired to the pipes/manholes layer ``afterCommitChanges`` signal in the dock.
         """
         self.enrich_stale = True
         self.berging_stale = True

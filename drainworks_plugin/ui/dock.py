@@ -1,9 +1,9 @@
 """The main Drainworks dock widget.
 
-Hosts the action buttons (import / trajectory / lost capacity), a filterable
-sink selector, the trajectory table (A, B, C … with manhole code, distance and a
-delete button), and the embedded pyqtgraph side-view. It also owns the
-trajectory state and draws the route + lettered markers on the canvas.
+Hosts the three pipeline step buttons (import / enrich / lost storage), a sink
+selector with a per-row-delete table, a contextual trajectory edit bar, and the
+embedded pyqtgraph side-view. It also owns the trajectory state and draws the
+route + lettered markers on the canvas.
 """
 
 import os
@@ -279,10 +279,7 @@ class DrainworksDock(QDockWidget):
         self.sink_combo.clear()
         self.sink_combo.addItems(sorted(m.code for m in manholes))
         self.sinks = {m.code for m in manholes if m.is_sink}
-        # Treat the loaded sinks as the baseline (not stale until they change).
-        self.computed_sinks = set(self.sinks) if self.sinks else None
         self._update_sink_table()
-        self._update_berging_button()
 
         for lyr in (pipe_layer, manhole_layer):
             try:
@@ -452,7 +449,7 @@ class DrainworksDock(QDockWidget):
         self.traj_bar.setVisible(checked)
         if checked:
             self.btn_sink_map.setChecked(False)
-            self._activate_tool(self._on_pick, self._on_reset)
+            self._activate_tool(self._on_pick, self._on_reset, editing=True)
             self._sync_traj_buttons()
         else:
             self.btn_traj_delmode.setChecked(False)
@@ -465,7 +462,7 @@ class DrainworksDock(QDockWidget):
         else:
             self._clear_tool()
 
-    def _activate_tool(self, on_pick, on_reset):
+    def _activate_tool(self, on_pick, on_reset, editing=False):
         from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
 
         if self.manhole_layer is None:
@@ -473,9 +470,12 @@ class DrainworksDock(QDockWidget):
         canvas = self.iface.mapCanvas()
         if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
+        # ctrl-click delete + drag-move only apply to trajectory editing, not sink-pick.
+        ctrl_pick = self._on_ctrl_pick if editing else None
+        drag = self._on_drag if editing else None
         self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
                                           on_move=self._on_map_hover,
-                                          on_ctrl_pick=self._on_ctrl_pick, on_drag=self._on_drag)
+                                          on_ctrl_pick=ctrl_pick, on_drag=drag)
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
@@ -516,20 +516,8 @@ class DrainworksDock(QDockWidget):
         # (see _on_loss), so changing them just updates the UI + staleness state.
         self._update_sink_table()
         self._update_sink_markers()
-        self._update_berging_button()
         self.state.mark_sinks_changed()
         self._refresh_step_buttons()
-
-    def _update_berging_button(self):
-        """Reflect whether the berging is up to date with the current sinks."""
-        if not hasattr(self, "btn_loss"):
-            return
-        if self.computed_sinks is not None and self.sinks != self.computed_sinks:
-            self.btn_loss.setText("Herbereken berging")
-            self.btn_loss.setStyleSheet("color: #c54141; font-weight: bold;")
-        else:
-            self.btn_loss.setText("Bereken berging")
-            self.btn_loss.setStyleSheet("")
 
     def _update_sink_markers(self):
         if self.graphics is None:
@@ -651,20 +639,6 @@ class DrainworksDock(QDockWidget):
         """Recompute route, refresh map graphics and side-view."""
         self._update_graphics()
         self._update_side_view()
-
-    def _cumulative_distances(self):
-        """Distance along the route at each chosen waypoint (A=0, B, C, …)."""
-        cumulative = [0.0]
-        if self.network is None:
-            return cumulative * len(self.waypoints)
-        total = 0.0
-        for a, b in zip(self.waypoints, self.waypoints[1:]):
-            try:
-                total += self.network.shortest_path(a, b).total_length
-            except ValueError:
-                total = float("nan")
-            cumulative.append(total)
-        return cumulative[: len(self.waypoints)]
 
     def _update_graphics(self):
         if self.graphics is None:
