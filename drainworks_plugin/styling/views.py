@@ -80,9 +80,12 @@ def _apply_label(layer, expression):
         layer.setLabeling(None)
         layer.triggerRepaint()
         return
+    from qgis.core import QgsWkbTypes
     settings = QgsPalLayerSettings()
     settings.fieldName = expression
     settings.isExpression = True
+    if layer.geometryType() == QgsWkbTypes.LineGeometry:
+        settings.placement = QgsPalLayerSettings.Line  # parallel to the pipe
     layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
     layer.setLabelsEnabled(True)
     layer.triggerRepaint()
