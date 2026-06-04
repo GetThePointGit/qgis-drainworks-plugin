@@ -198,5 +198,14 @@ drainworks_plugin/external/rgs_ribx
 # Large user-provided SUFRIB validation data (not committed)
 example/voorbeeld_rib.rib
 example/voorbeeld_rib.rmb
+example/voorbeeld_rib.gpkg
 example/voorbeeld_rib_output.zip
 example/voorbeeld_rib_output/
+
+# Large legacy "old tool" reference data — too big for GitHub, not used by tests.
+# Kept locally for manual comparison; never committed.
+example/ribx_input_old_tool*
+example/shapefile_output_old_tool*
+
+# Stray pytest output dump
+pytest_output.txt
