@@ -51,3 +51,22 @@ def test_observations_placed_at_cumulative_distance():
     marker = profile.observations[0]
     assert marker.dist == pytest.approx(25.0)
     assert marker.code == "BCA"
+
+
+def test_build_profile_emits_manhole_levels_with_ground():
+    pipes = {
+        "L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-2.6, length=30.0),
+    }
+    path = Path(manholes=["P1", "P2"], pipe_codes=["L1"], total_length=30.0)
+    manholes = {
+        "P1": rgs_ribx.Manhole(code="P1", ground_level=0.2),
+        "P2": rgs_ribx.Manhole(code="P2", ground_level=0.1),
+    }
+
+    profile = build_profile(path, pipes, manholes_by_code=manholes)
+
+    levels = {code: (bottom, ground) for (_d, code, bottom, ground) in profile.manhole_levels}
+    assert levels["P1"][1] == 0.2
+    assert levels["P2"][1] == 0.1
+    assert round(levels["P1"][0], 1) == -2.0
+    assert round(levels["P2"][0], 1) == -2.6
