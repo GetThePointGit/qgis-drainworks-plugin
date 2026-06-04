@@ -206,8 +206,10 @@ class DrainworksDock(QDockWidget):
             "Ongedaan", "undo.svg", self._on_undo, "Maak de laatste wijziging ongedaan")
         self.btn_traj_redo = self._text_tool_button(
             "Opnieuw", "redo.svg", self._on_redo, "Voer de ongedane wijziging opnieuw uit")
+        self.btn_traj_done = self._text_tool_button(
+            "Klaar", "check.svg", self._on_traj_done, "Sluit de trajectkeuze af")
         for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
-                  self.btn_traj_undo, self.btn_traj_redo):
+                  self.btn_traj_undo, self.btn_traj_redo, self.btn_traj_done):
             traj_layout.addWidget(b)
         traj_layout.addStretch()
         self.volume_label = QLabel("")
@@ -552,16 +554,34 @@ class DrainworksDock(QDockWidget):
         self.active_code = self.waypoints[-1]
         self._commit_waypoints()
 
+    def _on_traj_done(self):
+        """Finish trajectory editing: turn the Traject tool off."""
+        self.btn_traj.setChecked(False)
+        self._on_traj_toggled(False)
+
     def _on_traj_toggled(self, checked):
         self.traj_bar.setVisible(checked)
+        canvas = self.iface.mapCanvas()
         if checked:
             self.btn_sink_map.setChecked(False)
             self._activate_tool(self._on_pick, self._on_reset, editing=True)
             self._sync_traj_buttons()
+            canvas.viewport().installEventFilter(self)
         else:
             self.btn_traj_delmode.setChecked(False)
             self._clear_tool()
-        self._update_side_view()  # switch BOB-live (on) <-> measured (off)
+            canvas.viewport().removeEventFilter(self)
+        self._update_side_view()
+        self._update_graphics()
+
+    def eventFilter(self, obj, event):  # noqa: N802 (Qt override)
+        from qgis.PyQt.QtCore import QEvent
+        if event.type() == QEvent.Leave and self.btn_traj.isChecked():
+            if self.graphics is not None:
+                self.graphics.set_hover(None)
+            self._update_side_view()   # revert graph to the committed trajectory
+            self._update_graphics()    # revert map to the committed trajectory
+        return super().eventFilter(obj, event)
 
     def _on_sink_map_toggled(self, checked):
         if checked:
@@ -694,17 +714,18 @@ class DrainworksDock(QDockWidget):
         self.active_code = new_active
         self._commit_waypoints(push=changed)
 
-    def _preview_side_view(self, code):
-        """Live BOB-based side-view of the trajectory as it would become with `code`."""
+    def _preview(self, code):
+        """Live preview (graph + map) of the trajectory as it would become with `code`."""
         if self.network is None:
             return
-        preview = self.waypoints
+        preview, active = self.waypoints, self.active_code
         if code is not None:
             from drainworks_plugin.trajectory.placement import place_waypoint
             placed = place_waypoint(self.network, self.waypoints, self.active_code, code)
             if placed is not None:
-                preview = placed[0]
-        self._render_side_view(preview, light=True)
+                preview, active = placed
+        self._render_side_view(preview)
+        self._render_graphics(preview, active)
 
     def _on_map_hover(self, point):
         """Highlight the nearest put and drive the graph cursor from the route."""
@@ -723,7 +744,7 @@ class DrainworksDock(QDockWidget):
         self.graphics.set_hover(QgsPointXY(*nearest) if nearest else None)
         # While building a trajectory, live-preview it from the BOB lines.
         if self.btn_traj.isChecked():
-            self._preview_side_view(nearest_code)
+            self._preview(nearest_code)
         # Reverse hover: project onto the route -> show the graph cursor.
         if self.route_polyline:
             dist, offset = self._project_on_route(px, py)
@@ -757,10 +778,13 @@ class DrainworksDock(QDockWidget):
         self._update_side_view()
 
     def _update_graphics(self):
+        self._render_graphics(self.waypoints, self.active_code)
+
+    def _render_graphics(self, waypoints, active_code):
         if self.graphics is None:
             return
         labelled = []
-        for i, code in enumerate(self.waypoints):
+        for i, code in enumerate(waypoints):
             xy = self.manhole_points.get(code)
             if xy is not None:
                 letter = LETTERS[i] if i < len(LETTERS) else str(i + 1)
@@ -768,22 +792,22 @@ class DrainworksDock(QDockWidget):
         self.graphics.set_markers(labelled)
 
         geoms = []
-        if self.network is not None and len(self.waypoints) >= 2:
+        if self.network is not None and len(waypoints) >= 2:
             try:
-                route = self.network.route(self.waypoints)
+                route = self.network.route(waypoints)
                 geoms = [self.pipe_geoms.get(c) for c in route.pipe_codes]
             except ValueError:
                 geoms = []
         self.graphics.set_route(geoms)
 
-        active = self.active_code if self.active_code in self.waypoints else None
+        active = active_code if active_code in waypoints else None
         xy = self.manhole_points.get(active) if active else None
         self.graphics.set_active(QgsPointXY(*xy) if xy else None)
 
     def _update_side_view(self):
-        self._render_side_view(self.waypoints, light=self.btn_traj.isChecked())
+        self._render_side_view(self.waypoints)
 
-    def _render_side_view(self, waypoints, light):
+    def _render_side_view(self, waypoints):
         if self.network is None or len(waypoints) < 2:
             self.side_view.clear()
             self.volume_label.setText("")
@@ -797,17 +821,27 @@ class DrainworksDock(QDockWidget):
             self.volume_label.setText("")
             self.route_polyline = []
             return
-        measurements = {} if light else self.measurements_by_pipe
+        # Pipes of the committed trajectory show the measured invert + water; pipes that
+        # exist only in the live preview fall back to the straight BOB line (no water).
+        committed_route = None
+        committed_codes = set()
+        if len(self.waypoints) >= 2:
+            try:
+                committed_route = self.network.route(self.waypoints)
+                committed_codes = set(committed_route.pipe_codes)
+            except ValueError:
+                committed_route = None
+        measurements = {c: m for c, m in self.measurements_by_pipe.items() if c in committed_codes}
         profile = build_profile(route, self.pipes_by_code, measurements,
                                 manholes_by_code=self._manholes_by_code)
         self.side_view.show_profile(profile)
         self.route_polyline = self._build_route_polyline(route)
-        if light:
+        if committed_route is None:
             self.volume_label.setText("")
             return
         from drainworks_plugin.sideview.berging import route_berging
         segments_by_pipe = self._read_segments_by_pipe()
-        water, volume = route_berging(route, self.pipes_by_code, segments_by_pipe)
+        water, volume = route_berging(committed_route, self.pipes_by_code, segments_by_pipe)
         # Accurate berging carries per-point water on the profile (show_profile draws
         # it); only draw the segment overlay when there is no per-point water (fast).
         if not any(v.water_level is not None for v in profile.vertices):
