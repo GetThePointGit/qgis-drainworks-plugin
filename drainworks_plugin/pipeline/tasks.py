@@ -22,9 +22,17 @@ class _StepTask(QgsTask):
         self.error = None
 
     def _work(self):
+        """Do the step's heavy work and return its result (override in subclasses)."""
         raise NotImplementedError
 
     def run(self):  # noqa: D401 (QGIS-required name) — executes off-thread
+        """Run ``_work`` off the GUI thread, capturing result or error.
+
+        Returns
+        -------
+        bool
+            ``True`` on success, ``False`` if ``_work`` raised (stored in ``error``).
+        """
         try:
             self.result = self._work()
             return True
@@ -33,6 +41,7 @@ class _StepTask(QgsTask):
             return False
 
     def finished(self, ok):  # noqa: D401 — main thread
+        """Fire the ``on_done(task)`` callback on the main thread once ``run`` returns."""
         if self.on_done is not None:
             self.on_done(self)
 
@@ -45,6 +54,7 @@ class ImportTask(_StepTask):
         self._args = (input_path, measurement_path, gpkg_path)
 
     def _work(self):
+        """Parse the input and write the base layers to the GeoPackage."""
         return import_to_base(*self._args)
 
 
@@ -62,6 +72,7 @@ class EnrichTask(_StepTask):
             self._kwargs["bob_segment"] = bob_segment
 
     def _work(self):
+        """Validate, integrate and build segments for the base data."""
         return enrich(self.gpkg_path, **self._kwargs)
 
 
@@ -74,4 +85,5 @@ class BergingTask(_StepTask):
         self.resolution = resolution
 
     def _work(self):
+        """Run the flood-fill and write per-segment lost-storage results."""
         return compute_berging(self.gpkg_path, resolution=self.resolution)

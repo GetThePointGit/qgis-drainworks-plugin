@@ -44,6 +44,7 @@ MANHOLE_LABEL_GROUND = "ground"
 
 
 def _minmax(layer, field):
+    """Return ``(min, max)`` of ``field`` on ``layer`` (``(0, 1)`` as fallback)."""
     idx = layer.fields().indexOf(field)
     if idx < 0:
         return 0.0, 1.0
@@ -57,6 +58,7 @@ def _minmax(layer, field):
 
 
 def _ramp_expr(field, mn, mx, ramp="Spectral"):
+    """Build a ``ramp_color`` expression mapping ``field`` (mn..mx) to a colour."""
     # Spectral: low -> red, high -> blue; invert so deeper (lower) reads cool.
     return f"ramp_color('{ramp}', scale_linear(\"{field}\", {mn}, {mx}, 1, 0))"
 
@@ -75,6 +77,7 @@ def _graduated(field, mn, mx, make_symbol, classes=5):
 
 
 def _apply_label(layer, expression):
+    """Enable expression-based labelling on ``layer`` (``None`` disables labels)."""
     if expression is None:
         layer.setLabelsEnabled(False)
         layer.setLabeling(None)
@@ -92,7 +95,9 @@ def _apply_label(layer, expression):
 
 
 def apply_pipe_style(layer, color_mode, width_mode, label_mode):
+    """Apply colour, width and label modes to the pipes ``layer``."""
     def _line(color):
+        """Build a pipe line symbol of ``color`` (width data-defined per mode)."""
         s = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
         s.setColor(QColor(color))
         if width_mode == PIPE_WIDTH_DIAMETER:
@@ -122,7 +127,9 @@ def apply_pipe_style(layer, color_mode, width_mode, label_mode):
 
 
 def apply_manhole_style(layer, color_mode, label_mode):
+    """Apply colour and label modes to the manholes ``layer``."""
     def _marker(color):
+        """Build a circular manhole marker symbol of ``color``."""
         return QgsMarkerSymbol.createSimple(
             {"name": "circle", "color": color, "size": "2.4",
              "outline_color": "#ffffff", "outline_width": "0.2"})
@@ -163,6 +170,7 @@ def apply_segment_style(layer, color_mode):
     mn, mx = _minmax(layer, field)
 
     def _seg_line(color):
+        """Build a segment line symbol of ``color``."""
         return QgsLineSymbol.createSimple({"color": color, "width": "1.6"})
 
     layer.setRenderer(_graduated(field, mn, mx, _seg_line))

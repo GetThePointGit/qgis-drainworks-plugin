@@ -18,6 +18,7 @@ LINE_DEFAULTS = {
 
 
 def _default_lines():
+    """Return a fresh copy of ``LINE_DEFAULTS`` (per-line colour + width)."""
     return {key: dict(value) for key, value in LINE_DEFAULTS.items()}
 
 

@@ -38,6 +38,7 @@ class SideViewWidget(QWidget):
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
     def _on_mouse_moved(self, pos):
+        """Track the cursor, move the vertical line, and emit ``hovered`` (m)."""
         if not self.plot.sceneBoundingRect().contains(pos):
             self._cursor.hide()
             self.hovered.emit(-1.0)
@@ -56,15 +57,18 @@ class SideViewWidget(QWidget):
             self._cursor.show()
 
     def clear(self) -> None:
+        """Clear the plot and hide the hover cursor."""
         self.plot.clear()
         self._cursor.hide()
 
     def _style(self, key):
+        """Return the ``{'color', 'width'}`` style for a line ``key``."""
         from drainworks_plugin.sideview.settings import LINE_DEFAULTS
         lines = getattr(self, "_lines", None) or LINE_DEFAULTS
         return lines.get(key, LINE_DEFAULTS[key])
 
     def _pen(self, key, dashed=False):
+        """Build a pyqtgraph pen for line ``key`` (optionally dashed)."""
         s = self._style(key)
         kw = {"color": s.get("color", "#000000"), "width": s.get("width", 1)}
         if dashed:
@@ -72,6 +76,7 @@ class SideViewWidget(QWidget):
         return pg.mkPen(**kw)
 
     def _add_water_fill(self, bob_dists, bobs, water_dists, water_levels):
+        """Fill (verloren berging) between the invert and the water-level curves."""
         from qgis.PyQt.QtGui import QColor
         bob_curve = pg.PlotCurveItem(bob_dists, bobs)
         water_curve = pg.PlotCurveItem(water_dists, water_levels)

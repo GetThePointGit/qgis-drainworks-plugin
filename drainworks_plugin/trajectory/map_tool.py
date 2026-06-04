@@ -23,6 +23,7 @@ class TrajectoryMapTool(QgsMapTool):
         self.on_ctrl_pick = on_ctrl_pick
 
     def canvasReleaseEvent(self, event):  # noqa: N802 (Qt override)
+        """Dispatch a click to pick, ctrl-pick or reset the nearest manhole."""
         point = self.toMapCoordinates(event.pos())
         code = self._nearest_manhole_code(point)
         if event.button() == Qt.RightButton:
@@ -43,6 +44,7 @@ class TrajectoryMapTool(QgsMapTool):
             self.on_pick(code)
 
     def canvasMoveEvent(self, event):  # noqa: N802 (Qt override)
+        """Report the hovered map coordinate to ``on_move`` (if wired)."""
         if self.on_move is not None:
             self.on_move(self.toMapCoordinates(event.pos()))
 

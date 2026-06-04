@@ -13,6 +13,7 @@ from drainworks_plugin.styling import views as v
 
 
 def _combo(options, current):
+    """Build a combo from ``(label, mode)`` options, selecting ``current``."""
     box = QComboBox()
     for label, mode in options:
         box.addItem(label, mode)
@@ -76,6 +77,7 @@ class StyleDialog(QDialog):
         layout.addWidget(buttons)
 
     def values(self):
+        """Return the chosen styling modes as a dict keyed by layer/aspect."""
         return {
             "pipe_color": self.pipe_color.currentData(),
             "pipe_width": self.pipe_width.currentData(),

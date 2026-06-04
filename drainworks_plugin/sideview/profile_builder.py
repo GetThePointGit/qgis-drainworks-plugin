@@ -40,6 +40,7 @@ class Profile:
 
 
 def _diameter(pipe) -> float:
+    """Return the pipe diameter, or ``0.0`` when unknown."""
     return pipe.diameter if pipe.diameter is not None else 0.0
 
 

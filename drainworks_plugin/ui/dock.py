@@ -35,6 +35,7 @@ LETTERS = string.ascii_uppercase
 
 
 def _icon(name):
+    """Return a QIcon for an SVG/PNG in the plugin's icons resource folder."""
     return QIcon(os.path.join(ICONS, name))
 
 
@@ -85,6 +86,7 @@ class DrainworksDock(QDockWidget):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
+        """Build the dock layout: toolbar, step cards, sink table, trajectory bar, side-view."""
         from qgis.gui import QgsCollapsibleGroupBox
 
         splitter = QSplitter(Qt.Horizontal)
@@ -237,6 +239,7 @@ class DrainworksDock(QDockWidget):
     SV_SETTINGS_KEY = "drainworks/sideview"
 
     def _load_sideview_settings(self):
+        """Load the side-view settings from QgsSettings as a SideViewSettings object."""
         import json
         from qgis.core import QgsSettings
         from drainworks_plugin.sideview.settings import SideViewSettings
@@ -248,6 +251,7 @@ class DrainworksDock(QDockWidget):
         return SideViewSettings.from_dict(data)
 
     def _on_sideview_settings(self):
+        """Open the side-view settings dialog and persist + apply the result on accept."""
         import json
         from qgis.core import QgsSettings
         from qgis.PyQt.QtWidgets import QDialog
@@ -266,6 +270,20 @@ class DrainworksDock(QDockWidget):
     BERGING_DEFAULTS = {"resolution": "accurate"}
 
     def _load_json_settings(self, key, defaults):
+        """Load a JSON settings dict from QgsSettings, merged onto ``defaults``.
+
+        Parameters
+        ----------
+        key : str
+            The QgsSettings key holding the JSON blob.
+        defaults : dict
+            Default values; only keys present here are taken from storage.
+
+        Returns
+        -------
+        dict
+            ``defaults`` updated with the stored (whitelisted) values.
+        """
         import json
         from qgis.core import QgsSettings
         raw = QgsSettings().value(key, "", type=str)
@@ -278,11 +296,13 @@ class DrainworksDock(QDockWidget):
         return merged
 
     def _save_json_settings(self, key, values):
+        """Store ``values`` as a JSON blob under ``key`` in QgsSettings."""
         import json
         from qgis.core import QgsSettings
         QgsSettings().setValue(key, json.dumps(values))
 
     def _on_enrich_settings(self):
+        """Open the enrich settings dialog and persist the result on accept."""
         from qgis.PyQt.QtWidgets import QDialog
         from drainworks_plugin.ui.enrich_settings_dialog import EnrichSettingsDialog
         current = self._load_json_settings(self.ENRICH_SETTINGS_KEY, self.ENRICH_DEFAULTS)
@@ -291,6 +311,7 @@ class DrainworksDock(QDockWidget):
             self._save_json_settings(self.ENRICH_SETTINGS_KEY, dialog.values())
 
     def _on_loss_settings(self):
+        """Open the lost-storage (berging) settings dialog and persist on accept."""
         from qgis.PyQt.QtWidgets import QDialog
         from drainworks_plugin.ui.berging_settings_dialog import BergingSettingsDialog
         current = self._load_json_settings(self.BERGING_SETTINGS_KEY, self.BERGING_DEFAULTS)
@@ -299,6 +320,7 @@ class DrainworksDock(QDockWidget):
             self._save_json_settings(self.BERGING_SETTINGS_KEY, dialog.values())
 
     def _tool_button(self, text, icon_name, slot, checkable=False):
+        """Build a main-toolbar QToolButton with the icon above the text."""
         button = QToolButton()
         button.setText(text)
         button.setIcon(_icon(icon_name))
@@ -321,6 +343,7 @@ class DrainworksDock(QDockWidget):
         return button
 
     def _set_data_enabled(self, enabled):
+        """Enable/disable the data-dependent buttons and sink controls."""
         for widget in (self.btn_traj, self.btn_style, self.btn_loss, self.btn_enrich,
                        self.btn_enrich_settings, self.btn_loss_settings,
                        self.sink_combo, self.btn_sink_map):
@@ -422,6 +445,7 @@ class DrainworksDock(QDockWidget):
 
     # ------------------------------------------------------------ actions
     def _on_import(self):
+        """Handle the Import button: delegate to the plugin's import flow."""
         self.plugin.on_import()
 
     def _on_base_edited(self):
@@ -442,6 +466,7 @@ class DrainworksDock(QDockWidget):
         return out
 
     def _reload_profile(self):
+        """Re-read the profile layer for the side-view and rebuild the route + graphics."""
         self.measurements_by_pipe = self._read_profile_for_sideview()
         self._rebuild()
 
@@ -461,6 +486,7 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _enrich_done(self, task):
+        """Enrich task callback: clear busy, report errors, refresh summary and layers."""
         from drainworks_plugin.ui.busy import stop_busy
         stop_busy(self.iface, self._busy)
         self._busy = None
@@ -506,6 +532,7 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _loss_done(self, task):
+        """Berging task callback: clear busy, report errors, show total and refresh."""
         from drainworks_plugin.ui.busy import stop_busy
         stop_busy(self.iface, self._busy)
         self._busy = None
@@ -569,6 +596,7 @@ class DrainworksDock(QDockWidget):
             label.setStyleSheet("color: #2e7d32;")
 
     def _on_style(self):
+        """Handle the Opmaak button: open the style dialog and apply the chosen styles."""
         if self.pipe_layer is None or self.manhole_layer is None:
             self.iface.messageBar().pushWarning("Drainworks", "Importeer eerst data.")
             return
@@ -619,6 +647,7 @@ class DrainworksDock(QDockWidget):
         self._on_traj_toggled(False)
 
     def _on_traj_toggled(self, checked):
+        """Toggle the trajectory tool: show/hide the bar and (de)activate the map tool."""
         self.traj_bar.setVisible(checked)
         canvas = self.iface.mapCanvas()
         if checked:
@@ -637,6 +666,7 @@ class DrainworksDock(QDockWidget):
         self._update_graphics()
 
     def eventFilter(self, obj, event):  # noqa: N802 (Qt override)
+        """Revert the live preview to the committed trajectory when the mouse leaves the canvas."""
         from qgis.PyQt.QtCore import QEvent
         if event.type() == QEvent.Leave and self.btn_traj.isChecked():
             if self.graphics is not None:
@@ -646,6 +676,7 @@ class DrainworksDock(QDockWidget):
         return super().eventFilter(obj, event)
 
     def _on_sink_map_toggled(self, checked):
+        """Toggle map-based sink picking; mutually exclusive with the trajectory tool."""
         if checked:
             self.btn_traj.setChecked(False)  # exclusive with trajectory
             self._activate_tool(self._on_sink_picked, on_reset=lambda: None)
@@ -653,6 +684,17 @@ class DrainworksDock(QDockWidget):
             self._clear_tool()
 
     def _activate_tool(self, on_pick, on_reset, editing=False):
+        """Set a TrajectoryMapTool on the canvas with the given pick/reset callbacks.
+
+        Parameters
+        ----------
+        on_pick : callable
+            Called with a manhole code when a put is clicked.
+        on_reset : callable
+            Called when the tool is reset (right/double click).
+        editing : bool, optional
+            When True, enables ctrl/right-click delete (trajectory editing only).
+        """
         from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
 
         if self.manhole_layer is None:
@@ -669,26 +711,31 @@ class DrainworksDock(QDockWidget):
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
+        """Unset and drop the active canvas map tool, if any."""
         if self.map_tool is not None:
             self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self.map_tool = None
 
     # ------------------------------------------------------------- sinks
     def _on_add_sink(self):
+        """Add the put currently selected in the combo box as a sink."""
         self._add_sink(self.sink_combo.currentText().strip())
 
     def _on_sink_picked(self, code):
+        """Add a map-clicked put as a sink, then turn the one-shot map-pick mode off."""
         self._add_sink(code)
         # One-shot: turn the map-pick button off after each chosen sink.
         self.btn_sink_map.setChecked(False)
         self._clear_tool()
 
     def _add_sink(self, code):
+        """Add ``code`` to the sink set (if it is a known put) and apply the change."""
         if code and code in self.manhole_points:
             self.sinks.add(code)
             self._apply_sinks()
 
     def _update_sink_table(self):
+        """Rebuild the sink table rows (code, bottom level, delete button) from ``self.sinks``."""
         from drainworks_plugin.io.geopackage_store import read_manhole_bottom_levels
         levels = read_manhole_bottom_levels(self.gpkg_path) if self.gpkg_path else {}
         codes = sorted(self.sinks)
@@ -705,10 +752,12 @@ class DrainworksDock(QDockWidget):
             self.sink_table.setCellWidget(i, 2, btn)
 
     def _remove_sink(self, code):
+        """Remove ``code`` from the sink set and apply the change."""
         self.sinks.discard(code)
         self._apply_sinks()
 
     def _apply_sinks(self):
+        """Refresh the sink table + markers and mark the berging stale after a sink change."""
         # Sinks are persisted to the GeoPackage only when the berging is computed
         # (see _on_loss), so changing them just updates the UI + staleness state.
         self._update_sink_table()
@@ -717,6 +766,7 @@ class DrainworksDock(QDockWidget):
         self._refresh_step_buttons()
 
     def _update_sink_markers(self):
+        """Draw the sink markers on the canvas at each sink put's location."""
         if self.graphics is None:
             return
         points = [QgsPointXY(*self.manhole_points[c]) for c in self.sinks
@@ -732,26 +782,31 @@ class DrainworksDock(QDockWidget):
         self._rebuild()
 
     def _sync_traj_buttons(self):
+        """Enable/disable the trajectory undo and redo buttons from the history state."""
         self.btn_traj_undo.setEnabled(self.history.can_undo())
         self.btn_traj_redo.setEnabled(self.history.can_redo())
 
     def _on_undo(self):
+        """Undo the last trajectory change and rebuild from the restored waypoints."""
         self.waypoints = self.history.undo()
         self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_redo(self):
+        """Redo the previously undone trajectory change and rebuild."""
         self.waypoints = self.history.redo()
         self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_ctrl_pick(self, code):
+        """Ctrl/right-click on a put: remove it from the trajectory if present."""
         if code in self.waypoints:
             self.waypoints.remove(code)
             self.active_code = self.waypoints[-1] if self.waypoints else None
             self._commit_waypoints()
 
     def _on_pick(self, code):
+        """Trajectory click on a put: delete it in delete-mode, otherwise place it."""
         if self.btn_traj_delmode.isChecked():
             if code in self.waypoints:
                 self.waypoints.remove(code)
@@ -834,6 +889,7 @@ class DrainworksDock(QDockWidget):
         return best_dist, best_off
 
     def _on_reset(self):
+        """Clear the whole trajectory and rebuild."""
         self.waypoints = []
         self.active_code = None
         self._commit_waypoints()
@@ -844,9 +900,19 @@ class DrainworksDock(QDockWidget):
         self._update_side_view()
 
     def _update_graphics(self):
+        """Render the canvas graphics for the committed waypoints and active put."""
         self._render_graphics(self.waypoints, self.active_code)
 
     def _render_graphics(self, waypoints, active_code):
+        """Draw lettered markers, the route geometry and the active-put highlight.
+
+        Parameters
+        ----------
+        waypoints : list of str
+            The ordered put codes to draw as lettered markers and route.
+        active_code : str or None
+            The currently active put to highlight, if it is in ``waypoints``.
+        """
         if self.graphics is None:
             return
         labelled = []
@@ -871,9 +937,19 @@ class DrainworksDock(QDockWidget):
         self.graphics.set_active(QgsPointXY(*xy) if xy else None)
 
     def _update_side_view(self):
+        """Render the side-view longitudinal profile for the committed waypoints."""
         self._render_side_view(self.waypoints)
 
     def _render_side_view(self, waypoints):
+        """Rebuild the longitudinal profile, water overlay and volume label for a route.
+
+        Parameters
+        ----------
+        waypoints : list of str
+            The route to draw; may be a live preview differing from the committed
+            ``self.waypoints``, in which case only committed pipes show measured
+            water and contribute to the berging volume.
+        """
         if self.network is None or len(waypoints) < 2:
             self.side_view.clear()
             self.volume_label.setText("")
@@ -917,6 +993,7 @@ class DrainworksDock(QDockWidget):
         self.volume_label.setText(f"Verloren berging: {volume:.2f} m³" if volume else "")
 
     def _read_segments_by_pipe(self):
+        """Read the segments layer into ``{pipe_code: [segment_dict, ...]}``."""
         if not self.gpkg_path:
             return {}
         from drainworks_plugin.io.geopackage_store import read_segments
@@ -957,6 +1034,7 @@ class DrainworksDock(QDockWidget):
         self.graphics.set_hover(self._point_at_distance(dist))
 
     def _point_at_distance(self, dist):
+        """Return the map QgsPointXY at cumulative ``dist`` along the route polyline."""
         poly = self.route_polyline
         if not poly:
             return None
@@ -972,6 +1050,7 @@ class DrainworksDock(QDockWidget):
 
     # ------------------------------------------------------------ teardown
     def deactivate_tool(self):
+        """Unset the map tool, untoggle the traject/sink buttons and clear the hover."""
         if self.map_tool is not None:
             self.iface.mapCanvas().unsetMapTool(self.map_tool)
             self.map_tool = None

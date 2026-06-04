@@ -24,9 +24,11 @@ class WaypointHistory:
         self._cursor = len(self._stack) - 1
 
     def can_undo(self):
+        """Whether there is an earlier state to step back to."""
         return self._cursor > 0
 
     def can_redo(self):
+        """Whether there is a later state to step forward to."""
         return self._cursor < len(self._stack) - 1
 
     def undo(self):

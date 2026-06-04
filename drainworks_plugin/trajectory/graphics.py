@@ -25,9 +25,11 @@ class LabeledMarker(QgsVertexMarker):
         self.setFillColor(QColor(MARKER_COLOR))   # filled so the white letter reads
 
     def boundingRect(self):  # noqa: N802 (Qt override)
+        """Return the marker bounds enlarged to fit the painted letter."""
         return super().boundingRect().adjusted(-4, -4, 4, 4)
 
     def paint(self, painter):  # noqa: N802 (Qt override)
+        """Paint the marker, then draw the centred white label letter."""
         super().paint(painter)
         painter.save()
         font = QFont()
@@ -123,11 +125,13 @@ class TrajectoryGraphics:
         self._redraw()
 
     def clear_markers(self):
+        """Remove the lettered waypoint markers from the canvas."""
         for marker in self.markers:
             self.canvas.scene().removeItem(marker)
         self.markers = []
 
     def clear(self):
+        """Hide/remove all markers and reset the route band (keeps the band)."""
         self.clear_markers()
         for marker in self.sink_markers:
             self.canvas.scene().removeItem(marker)

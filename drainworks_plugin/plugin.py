@@ -45,6 +45,7 @@ class DrainworksPlugin:
         self.iface.addPluginToMenu(self.menu, self.action)
 
     def _on_dock_visibility(self, visible):
+        """Keep the toolbar toggle in sync; deactivate the tool when hidden."""
         self.action.setChecked(visible)
         if not visible:
             self.dock.deactivate_tool()

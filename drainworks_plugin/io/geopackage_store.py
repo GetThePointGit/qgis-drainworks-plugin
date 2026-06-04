@@ -14,6 +14,7 @@ RD_EPSG = 28992
 
 
 def _srs() -> "osr.SpatialReference":
+    """Return the RD New (EPSG:28992) spatial reference for the GeoPackage layers."""
     srs = osr.SpatialReference()
     srs.ImportFromEPSG(RD_EPSG)
     return srs
@@ -44,6 +45,7 @@ def _parse_linestring_wkt(line_wkt):
 
 
 def _cumulative(pts):
+    """Return the cumulative chainage [0.0, ...] along the ``(x, y)`` vertices ``pts``."""
     cum = [0.0]
     for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
         cum.append(cum[-1] + ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5)
@@ -51,6 +53,7 @@ def _cumulative(pts):
 
 
 def _interpolate(pts, cum, dist):
+    """Return the ``(x, y)`` point at ``dist`` along ``pts`` (chainage ``cum``), clamped to the ends."""
     dist = min(max(dist, 0.0), cum[-1])
     for i in range(len(pts) - 1):
         if cum[i] <= dist <= cum[i + 1]:
@@ -99,6 +102,20 @@ def _manhole_bottom_levels(pipes) -> dict:
 
 
 def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
+    """Create the ``manholes`` Point layer and write one feature per manhole.
+
+    Parameters
+    ----------
+    ds : osgeo.ogr.DataSource
+        Open, writable GeoPackage datasource.
+    srs : osr.SpatialReference
+        Spatial reference for the new layer.
+    manholes : iterable of rgs_ribx.Manhole
+        Manholes to write.
+    bottom_levels : dict, optional
+        ``{manhole_code: bottom_level}`` lowest connected pipe BOB; missing codes
+        leave ``bottom_level`` NULL.
+    """
     bottom_levels = bottom_levels or {}
     layer = ds.CreateLayer("manholes", srs, ogr.wkbPoint)
     layer.CreateField(ogr.FieldDefn("code", ogr.OFTString))
@@ -123,6 +140,20 @@ def _write_manholes(ds, srs, manholes, bottom_levels=None) -> None:
 
 
 def _write_pipes(ds, srs, pipes) -> None:
+    """Create the ``pipes`` LineString layer and write one feature per pipe.
+
+    Derives and stores ``bob_avg`` (mean BOB) and ``slope`` (verhang per metre)
+    when both BOBs and a length are available.
+
+    Parameters
+    ----------
+    ds : osgeo.ogr.DataSource
+        Open, writable GeoPackage datasource.
+    srs : osr.SpatialReference
+        Spatial reference for the new layer.
+    pipes : iterable of rgs_ribx.Pipe
+        Pipes to write.
+    """
     layer = ds.CreateLayer("pipes", srs, ogr.wkbLineString)
     str_fields = ["code", "manhole1", "manhole2", "shape", "material",
                   "sewerage_type", "inspection_date", "issues"]
@@ -386,6 +417,7 @@ def read_profile(path) -> dict:
         return grouped
     for feat in layer:
         def _opt(name):
+            """Return the field ``name`` or None when NULL or absent (old profile layer)."""
             try:
                 return None if feat.IsFieldNull(name) else feat.GetField(name)
             except (RuntimeError, ValueError):
@@ -488,6 +520,7 @@ def layer_counts(path) -> dict:
         return {"manholes": 0, "pipes": 0, "measurements": 0}
 
     def _count(name):
+        """Return the feature count of layer ``name`` (0 if the layer is absent)."""
         layer = ds.GetLayerByName(name)
         return layer.GetFeatureCount() if layer is not None else 0
 
@@ -526,6 +559,7 @@ def read_manhole_bottom_levels(path) -> dict:
 
 
 def _round6(value):
+    """Round ``value`` to 6 decimals (None stays None) for stable fingerprinting."""
     return None if value is None else round(float(value), 6)
 
 

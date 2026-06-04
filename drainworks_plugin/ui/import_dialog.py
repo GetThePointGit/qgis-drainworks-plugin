@@ -63,6 +63,7 @@ class ImportDialog(QDialog):
         layout.addLayout(buttons)
 
     def _row(self, line_edit, handler):
+        """Build a line-edit + "Bladeren…" button row wired to ``handler``."""
         row = QHBoxLayout()
         browse = QPushButton("Bladeren…")
         browse.clicked.connect(handler)
@@ -71,6 +72,7 @@ class ImportDialog(QDialog):
         return row
 
     def _browse_input(self):
+        """Pick the input file; remember its dir and suggest an output path."""
         start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         path, _ = QFileDialog.getOpenFileName(
             self, "Selecteer bestand", start_dir,
@@ -84,6 +86,7 @@ class ImportDialog(QDialog):
                 self.output_path.setText(base + ".gpkg")
 
     def _browse_meas(self):
+        """Pick the optional measurement file (.hel / .rmb)."""
         start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         if not start_dir and self.input_path.text():
             start_dir = os.path.dirname(self.input_path.text())
@@ -94,6 +97,7 @@ class ImportDialog(QDialog):
             self.meas_path.setText(path)
 
     def _browse_output(self):
+        """Pick the target GeoPackage path and remember its directory."""
         # Prefer the remembered target dir; fall back to the chosen input's dir.
         start_dir = _remembered_dir(SETTINGS_TARGET_DIR)
         if not start_dir and self.input_path.text():

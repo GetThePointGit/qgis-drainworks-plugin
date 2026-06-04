@@ -80,6 +80,7 @@ class SewerNetwork:
         return path
 
     def _shortest_path_uncached(self, start: str, end: str) -> Path:
+        """Compute the Dijkstra shortest path without consulting the cache."""
         if start not in self._adj:
             raise ValueError(f"Unknown manhole: {start}")
         dist = {start: 0.0}

@@ -42,12 +42,14 @@ class _LineRow(QWidget):
         layout.addWidget(self.spn_width)
 
     def _pick(self):
+        """Open a colour dialog and update the button with the chosen colour."""
         color = QColorDialog.getColor(QColor(self._color), self)
         if color.isValid():
             self._color = color.name()
             self.btn_color.setText(color.name())
 
     def value(self):
+        """Return this line's ``{"color", "width"}`` style dict."""
         return {"color": self._color, "width": self.spn_width.value()}
 
 
@@ -88,6 +90,7 @@ class SideViewSettingsDialog(QDialog):
         form.addRow(buttons)
 
     def _reset(self):
+        """Reset all widgets to the default SideViewSettings values."""
         defaults = SideViewSettings()
         self.cmb_legend.setCurrentIndex(self.cmb_legend.findData(defaults.legend_position))
         self.chk_white.setChecked(defaults.legend_white_bg)
