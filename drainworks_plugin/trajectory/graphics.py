@@ -19,25 +19,24 @@ class LabeledMarker(QgsVertexMarker):
         super().__init__(canvas)
         self._label = label
         self.setIconType(QgsVertexMarker.ICON_CIRCLE)
-        self.setIconSize(14)
+        self.setIconSize(18)
         self.setPenWidth(3)
         self.setColor(QColor(MARKER_COLOR))
-        self.setFillColor(QColor(255, 255, 255))
+        self.setFillColor(QColor(MARKER_COLOR))   # filled so the white letter reads
 
     def boundingRect(self):  # noqa: N802 (Qt override)
-        # The base rect only covers the icon; the label is drawn beyond it. Without
-        # widening the bounds, Qt clips/leaves stale text on partial repaints.
-        return super().boundingRect().adjusted(-2, -24, 42, 6)
+        return super().boundingRect().adjusted(-4, -4, 4, 4)
 
     def paint(self, painter):  # noqa: N802 (Qt override)
         super().paint(painter)
         painter.save()
         font = QFont()
         font.setBold(True)
-        font.setPointSize(10)
+        font.setPointSize(8)
         painter.setFont(font)
-        painter.setPen(QColor(MARKER_COLOR))
-        painter.drawText(10, -6, self._label)
+        painter.setPen(QColor(255, 255, 255))
+        from qgis.PyQt.QtCore import QRectF, Qt as _Qt
+        painter.drawText(QRectF(-9, -9, 18, 18), _Qt.AlignCenter, self._label)
         painter.restore()
 
 
@@ -47,12 +46,13 @@ class TrajectoryGraphics:
     def __init__(self, canvas):
         self.canvas = canvas
         self.route_band = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
-        self.route_band.setColor(QColor(ROUTE_COLOR))
-        self.route_band.setWidth(2)
-        self.route_band.setLineStyle(Qt.DashLine)
+        self.route_band.setColor(QColor(197, 65, 65, 90))   # semi-transparent
+        self.route_band.setWidth(10)                        # wide band
+        self.route_band.setLineStyle(Qt.SolidLine)
         self.markers = []
         self.sink_markers = []
         self.hover_marker = None
+        self.active_marker = None
 
     def _redraw(self):
         """Force an immediate repaint of the canvas overlay (markers/rubber bands)."""
@@ -106,6 +106,21 @@ class TrajectoryGraphics:
             self.hover_marker.show()
         self._redraw()
 
+    def set_active(self, point):
+        """Highlight the active waypoint (where editing continues), or hide if None."""
+        if self.active_marker is None:
+            self.active_marker = QgsVertexMarker(self.canvas)
+            self.active_marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
+            self.active_marker.setColor(QColor("#00a0e9"))
+            self.active_marker.setIconSize(24)
+            self.active_marker.setPenWidth(3)
+        if point is None:
+            self.active_marker.hide()
+        else:
+            self.active_marker.setCenter(point)
+            self.active_marker.show()
+        self._redraw()
+
     def clear_markers(self):
         for marker in self.markers:
             self.canvas.scene().removeItem(marker)
@@ -118,6 +133,8 @@ class TrajectoryGraphics:
         self.sink_markers = []
         if self.hover_marker is not None:
             self.hover_marker.hide()
+        if self.active_marker is not None:
+            self.active_marker.hide()
         self.route_band.reset(QgsWkbTypes.LineGeometry)
         self._redraw()
 
@@ -128,6 +145,9 @@ class TrajectoryGraphics:
         if self.hover_marker is not None:
             scene.removeItem(self.hover_marker)
             self.hover_marker = None
+        if self.active_marker is not None:
+            scene.removeItem(self.active_marker)
+            self.active_marker = None
         if self.route_band is not None:
             scene.removeItem(self.route_band)
             self.route_band = None
