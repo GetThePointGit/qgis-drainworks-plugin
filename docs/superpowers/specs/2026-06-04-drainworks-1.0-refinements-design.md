@@ -72,6 +72,15 @@ Staleness indication:
 Re-run flow: edit BOB/pipe in QGIS → commit edits → click **Verrijk basisdata** →
 segments + profile rebuilt → (optionally) **Bereken verloren berging**.
 
+### Asynchronous execution
+
+All three steps run as a **`QgsTask`** with a progress bar, so QGIS does not
+freeze on large datasets. The heavy work (parsing, integration, flood-fill,
+GeoPackage writes via OGR) runs off the main thread; **layer loading and dock
+updates happen in the task's `finished` callback** (main thread). While a step
+runs, its button is disabled and shows progress; errors are surfaced via the
+message bar on completion.
+
 ---
 
 ## 2. UX refinements
@@ -94,6 +103,11 @@ segments + profile rebuilt → (optionally) **Bereken verloren berging**.
   reset to defaults. Settings **persistent** (QgsSettings).
 - Show each put as a **vertical line from bottom (bob) to top (maaiveld)**, drawn
   with `ignoreBounds` so it does not affect auto-zoom.
+- **Live update on light data**: while the trajectory is being edited on the map,
+  the graph updates live from the **segment + put data** (coarse: bob_start/end per
+  segment) — fast enough for live redraw. The **detailed measured profile**
+  (`profile` points) is loaded and shown only once the trajectory is **finalised**
+  (editing stops / tool deactivated). The graph itself stays **read-only**.
 
 ### Sinks
 - Chosen sinks shown in a **table with a per-row delete button** (like the current
@@ -110,9 +124,9 @@ segments + profile rebuilt → (optionally) **Bereken verloren berging**.
 
 ## 3. Out of scope (1.0)
 
-- Live editing of the trajectory *in the graph* (deemed too heavy).
+- **Editing** the trajectory *in the graph* (add/move/remove via the graph). The
+  graph updates live but stays read-only; editing is on the map.
 - A separate validation issues table/layer (per-feature fields + summary suffice).
-- Asynchronous import (`QgsTask` progress bar) — possible follow-up for very large files.
 
 ---
 
