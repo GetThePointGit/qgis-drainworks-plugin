@@ -9,8 +9,25 @@ import rgs_ribx
 from drainworks_plugin.io.geopackage_store import (
     MeasurementRow,
     point_along_wkt,
+    write_base,
     write_geopackage,
 )
+
+
+def import_to_base(input_path, measurement_path, gpkg_path):
+    """Parse RIBX/SUFRIB and write the step-1 base GeoPackage. Returns the path.
+
+    Dispatches by extension: ``.rib``/``.hel`` -> SUFRIB (with optional
+    ``measurement_path``), otherwise RIBX. No height integration, no segments —
+    those are produced by step 2 (enrich).
+    """
+    lower = input_path.lower()
+    if lower.endswith((".rib", ".hel")):
+        paths = [input_path] + ([measurement_path] if measurement_path else [])
+        result = rgs_ribx.build_from_sufrib(paths)
+    else:
+        result = rgs_ribx.build_from_ribx(input_path)
+    return write_base(gpkg_path, result.manholes, result.pipes, result.raw_measurements)
 
 
 def import_ribx(ribx_path, gpkg_path, correct_bob=False):
