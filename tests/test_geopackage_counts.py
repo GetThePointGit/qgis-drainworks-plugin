@@ -51,3 +51,21 @@ def test_read_manhole_bottom_levels(tmp_gpkg):
     # bottom_level = lowest connected pipe BOB; pipe L1 has bob1=-2.0, bob2=-2.6
     assert round(levels["A"], 1) == -2.0
     assert round(levels["B"], 1) == -2.6
+
+
+def test_layer_counts_falls_back_to_legacy_measurements(tmp_path):
+    from osgeo import ogr, osr
+    from drainworks_plugin.io.geopackage_store import layer_counts
+    path = tmp_path / "old.gpkg"
+    ds = ogr.GetDriverByName("GPKG").CreateDataSource(str(path))
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(28992)
+    ds.CreateLayer("manholes", srs, ogr.wkbPoint)
+    ds.CreateLayer("pipes", srs, ogr.wkbLineString)
+    meas = ds.CreateLayer("measurements", srs, ogr.wkbPoint)
+    defn = meas.GetLayerDefn()
+    for _ in range(3):
+        meas.CreateFeature(ogr.Feature(defn))
+    ds = None
+    counts = layer_counts(str(path))
+    assert counts["measurements"] == 3   # falls back to the legacy layer

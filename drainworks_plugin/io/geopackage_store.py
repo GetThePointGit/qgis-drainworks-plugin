@@ -478,8 +478,11 @@ def layer_counts(path) -> dict:
         layer = ds.GetLayerByName(name)
         return layer.GetFeatureCount() if layer is not None else 0
 
+    measurements = _count("measurements_raw")
+    if ds.GetLayerByName("measurements_raw") is None:
+        measurements = _count("measurements")  # legacy gpkg
     return {"manholes": _count("manholes"), "pipes": _count("pipes"),
-            "measurements": _count("measurements_raw")}
+            "measurements": measurements}
 
 
 def total_lost_volume(path) -> float:
