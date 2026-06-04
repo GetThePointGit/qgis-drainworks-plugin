@@ -64,9 +64,15 @@ def enrich(gpkg_path, correct_bob=True, min_segment=MIN_SEGMENT,
 
     n_pipe_issues = sum(1 for v in validation["pipes"].values() if v)
     n_manhole_issues = sum(1 for v in validation["manholes"].values() if v)
+    all_issues = [i for v in validation["pipes"].values() for i in v]
+    all_issues += [i for v in validation["manholes"].values() for i in v]
+    n_errors = sum(1 for i in all_issues if getattr(i, "severity", "error") == "error")
+    n_warnings = sum(1 for i in all_issues if getattr(i, "severity", "error") == "warning")
     return {
         "n_profile_points": len(profile_rows),
         "n_segments": len(segment_rows),
         "n_pipes_with_issues": n_pipe_issues,
         "n_manholes_with_issues": n_manhole_issues,
+        "n_errors": n_errors,
+        "n_warnings": n_warnings,
     }

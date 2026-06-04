@@ -466,3 +466,31 @@ def update_segments_berging(path, by_fid) -> int:
     ds.CommitTransaction()
     ds = None
     return len(by_fid)
+
+
+def layer_counts(path) -> dict:
+    """Return feature counts: ``{'manholes': n, 'pipes': n, 'measurements': n}``."""
+    ds = ogr.Open(str(path))
+    if ds is None:
+        return {"manholes": 0, "pipes": 0, "measurements": 0}
+
+    def _count(name):
+        layer = ds.GetLayerByName(name)
+        return layer.GetFeatureCount() if layer is not None else 0
+
+    return {"manholes": _count("manholes"), "pipes": _count("pipes"),
+            "measurements": _count("measurements_raw")}
+
+
+def total_lost_volume(path) -> float:
+    """Return the summed ``lost_volume`` over the ``segments`` layer (0.0 if none)."""
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("segments") if ds is not None else None
+    if layer is None:
+        return 0.0
+    total = 0.0
+    for feat in layer:
+        value = feat.GetField("lost_volume")
+        if value is not None:
+            total += value
+    return total

@@ -43,3 +43,20 @@ def test_enrich_rerun_reflects_edited_bob(fixtures_dir, tmp_gpkg):
     enrich(tmp_gpkg, correct_bob=True)
     second_end = read_profile(tmp_gpkg)["L001"][-1].bob
     assert round(second_end - first_end, 2) == -1.0
+
+
+def test_enrich_summary_counts_errors_and_warnings(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import write_base
+    from drainworks_plugin.pipeline.enrich import enrich
+    import rgs_ribx
+
+    manholes = [rgs_ribx.Manhole(code="A", geometry_wkt="POINT (0 0)")]
+    pipes = [
+        rgs_ribx.Pipe(code="L1", manhole1="A", manhole2="Z", bob1=-2.0, bob2=None,
+                      diameter=5.0, length=30.0, geometry_wkt="LINESTRING (0 0, 30 0)"),
+    ]
+    write_base(tmp_gpkg, manholes, pipes, raw_measurements={})
+    summary = enrich(tmp_gpkg, correct_bob=False)
+    # missing bob2 + dangling manhole2 -> errors ; diameter 5000 mm -> warning
+    assert summary["n_errors"] >= 2
+    assert summary["n_warnings"] >= 1
