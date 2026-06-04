@@ -523,3 +523,73 @@ def read_manhole_bottom_levels(path) -> dict:
         if not feat.IsFieldNull("bottom_level"):
             levels[feat.GetField("code")] = feat.GetField("bottom_level")
     return levels
+
+
+def _round6(value):
+    return None if value is None else round(float(value), 6)
+
+
+def base_fingerprint(path) -> str:
+    """A stable SHA-1 over the base data that drives the enrich output."""
+    import hashlib
+
+    parts = []
+    for p in sorted(read_pipes(path), key=lambda x: x.code or ""):
+        parts.append(("P", p.code, p.manhole1, p.manhole2, _round6(p.bob1), _round6(p.bob2),
+                      _round6(p.diameter), _round6(p.length), p.shape))
+    raw = read_raw_measurements(path)
+    for code in sorted(raw):
+        rm = raw[code]
+        for pt in sorted(rm.points, key=lambda d: d.get("dist") or 0.0):
+            parts.append(("M", code, _round6(pt.get("dist")), _round6(pt.get("value")),
+                          rm.measurement_type, rm.reverse))
+    for m in sorted(read_manholes(path), key=lambda x: x.code or ""):
+        parts.append(("K", m.code, _round6(m.ground_level), m.geometry_wkt is not None))
+    return hashlib.sha1(repr(parts).encode("utf-8")).hexdigest()
+
+
+def berging_fingerprint(enrich_fp, sinks) -> str:
+    """SHA-1 over the enrich fingerprint + the sorted sink codes."""
+    import hashlib
+
+    return hashlib.sha1(repr((enrich_fp, sorted(sinks or []))).encode("utf-8")).hexdigest()
+
+
+def read_meta(path) -> dict:
+    """Read the ``dw_meta`` key/value table into a dict (JSON-decoded values)."""
+    import json
+
+    ds = ogr.Open(str(path))
+    layer = ds.GetLayerByName("dw_meta") if ds is not None else None
+    out = {}
+    if layer is None:
+        return out
+    for feat in layer:
+        try:
+            out[feat.GetField("key")] = json.loads(feat.GetField("value"))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+def write_meta(path, values) -> None:
+    """Merge ``values`` into the ``dw_meta`` table (JSON-encoded values)."""
+    import json
+
+    merged = read_meta(path)
+    merged.update(values)
+    ds = ogr.Open(str(path), update=1)
+    _replace_layer(ds, "dw_meta")
+    layer = ds.CreateLayer("dw_meta", _srs(), ogr.wkbNone)
+    layer.CreateField(ogr.FieldDefn("key", ogr.OFTString))
+    layer.CreateField(ogr.FieldDefn("value", ogr.OFTString))
+    defn = layer.GetLayerDefn()
+    ds.StartTransaction()
+    for key, value in merged.items():
+        feat = ogr.Feature(defn)
+        feat.SetField("key", key)
+        feat.SetField("value", json.dumps(value))
+        layer.CreateFeature(feat)
+        feat = None
+    ds.CommitTransaction()
+    ds = None
