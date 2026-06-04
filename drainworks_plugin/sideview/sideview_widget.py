@@ -99,17 +99,26 @@ class SideViewWidget(QWidget):
             self.plot.plot(dists, water, pen=pg.mkPen("#2c7fb8", width=1, style=Qt.DashLine),
                            name="Waterpeil")
 
-        # Each put: a vertical line from invert (bottom) up to maaiveld (ground),
-        # drawn so it does not affect auto-zoom.
+        # Each put: a solid green invert->maaiveld line, plus a thin light full-height
+        # line carrying the put code as a vertical label. Both stay out of auto-zoom.
         show_codes = getattr(self, "_show_putcodes", True)
-        for dist, code, bottom, ground in getattr(profile, "manhole_levels", []):
+        levels = getattr(profile, "manhole_levels", [])
+        for dist, code, bottom, ground in levels:
             top = ground if ground is not None else bottom
             item = pg.PlotCurveItem([dist, dist], [bottom, top], pen=pg.mkPen("#398a39", width=2))
             self.plot.addItem(item, ignoreBounds=True)
-            if show_codes:
-                text = pg.TextItem(code, color="#398a39", anchor=(0.5, 1.1))
-                text.setPos(dist, top)
-                self.plot.addItem(text, ignoreBounds=True)
+            line = pg.InfiniteLine(
+                pos=dist, angle=90, pen=pg.mkPen("#b5d6b5", width=1),
+                label=(code if show_codes else None),
+                labelOpts={"position": 0.92, "color": "#398a39", "rotateAxis": (1, 0)})
+            self.plot.addItem(line)
+        # Maaiveld line connecting the put ground levels (excluded from auto-zoom).
+        ground_pts = [(d, g) for d, _c, _b, g in levels if g is not None]
+        if len(ground_pts) >= 2:
+            maaiveld = pg.PlotCurveItem(
+                [d for d, _ in ground_pts], [g for _, g in ground_pts],
+                pen=pg.mkPen("#a0522d", width=1, style=Qt.DashLine), name="Maaiveld")
+            self.plot.addItem(maaiveld, ignoreBounds=True)
 
         # Observation markers as vertical dotted lines with labels.
         for marker in profile.observations:
