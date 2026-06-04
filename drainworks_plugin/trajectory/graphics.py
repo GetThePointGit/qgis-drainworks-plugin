@@ -8,8 +8,8 @@ from qgis.gui import QgsRubberBand, QgsVertexMarker
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor, QFont
 
-MARKER_COLOR = "#c54141"
-ROUTE_COLOR = "#c54141"
+MARKER_COLOR = "#5a5a5a"
+ROUTE_COLOR = "#5a5a5a"
 
 
 class LabeledMarker(QgsVertexMarker):
@@ -46,7 +46,7 @@ class TrajectoryGraphics:
     def __init__(self, canvas):
         self.canvas = canvas
         self.route_band = QgsRubberBand(canvas, QgsWkbTypes.LineGeometry)
-        self.route_band.setColor(QColor(197, 65, 65, 90))   # semi-transparent
+        self.route_band.setColor(QColor(90, 90, 90, 90))   # semi-transparent grey
         self.route_band.setWidth(10)                        # wide band
         self.route_band.setLineStyle(Qt.SolidLine)
         self.markers = []
