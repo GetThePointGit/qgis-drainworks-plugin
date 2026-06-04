@@ -154,10 +154,11 @@ class DrainworksDock(QDockWidget):
         sink_row.addWidget(add_sink)
         sink_row.addWidget(self.btn_sink_map)
         c2.addLayout(sink_row)
-        self.sink_table = QTableWidget(0, 2)
-        self.sink_table.setHorizontalHeaderLabels(["Sink", ""])
+        self.sink_table = QTableWidget(0, 3)
+        self.sink_table.setHorizontalHeaderLabels(["Sink", "bodem (m)", ""])
         self.sink_table.verticalHeader().setVisible(False)
-        self.sink_table.setColumnWidth(1, 30)
+        self.sink_table.setColumnWidth(1, 70)
+        self.sink_table.setColumnWidth(2, 30)
         self.sink_table.setMaximumHeight(120)
         c2.addWidget(self.sink_table)
         self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken verloren berging")
@@ -578,13 +579,20 @@ class DrainworksDock(QDockWidget):
             self._apply_sinks()
 
     def _update_sink_table(self):
+        from drainworks_plugin.io.geopackage_store import read_manhole_bottom_levels
+        levels = read_manhole_bottom_levels(self.gpkg_path) if self.gpkg_path else {}
         codes = sorted(self.sinks)
         self.sink_table.setRowCount(len(codes))
         for i, code in enumerate(codes):
             self.sink_table.setItem(i, 0, QTableWidgetItem(code))
-            btn = QPushButton("✕"); btn.setFixedWidth(28)
+            bottom = levels.get(code)
+            self.sink_table.setItem(i, 1, QTableWidgetItem(
+                f"{bottom:.2f}" if bottom is not None else "—"))
+            btn = QPushButton("✕")
+            btn.setFixedWidth(28)
+            btn.setToolTip("Verwijder deze sink")
             btn.clicked.connect(lambda _c, c=code: self._remove_sink(c))
-            self.sink_table.setCellWidget(i, 1, btn)
+            self.sink_table.setCellWidget(i, 2, btn)
 
     def _remove_sink(self, code):
         self.sinks.discard(code)
