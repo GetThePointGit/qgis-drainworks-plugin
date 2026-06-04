@@ -41,8 +41,11 @@ def style_manholes(layer) -> None:
     layer.triggerRepaint()
 
 
-def style_berging_lines(layer) -> None:
-    """Graduated blue->red LINE renderer on ``flooded_pct`` (0..1)."""
+def style_segments(layer) -> None:
+    """Graduated blue->red LINE renderer on the ``flooded_pct`` field (0..1).
+
+    Uses a graduated renderer so the layer-tree legend shows the flood classes.
+    """
     ranges = []
     steps = [
         (0.0, 0.25, FLOODED_LOW, "0.8"),
@@ -60,22 +63,10 @@ def style_berging_lines(layer) -> None:
     layer.triggerRepaint()
 
 
-def style_measurements_by_flooded(layer) -> None:
-    """Graduated blue->red renderer on the ``flooded_pct`` field (0..1)."""
-    ranges = []
-    steps = [
-        (0.0, 0.25, FLOODED_LOW),
-        (0.25, 0.5, "#7fcdbb"),
-        (0.5, 0.75, "#fec44f"),
-        (0.75, 1.01, FLOODED_HIGH),
-    ]
-    for lower, upper, hex_color in steps:
-        symbol = QgsMarkerSymbol.createSimple(
-            {"name": "circle", "color": hex_color, "size": "2.6"}
-        )
-        symbol.setColor(QColor(hex_color))
-        label = f"{int(lower * 100)}–{int(min(upper, 1.0) * 100)}%"
-        ranges.append(QgsRendererRange(lower, upper, symbol, label))
-    renderer = QgsGraduatedSymbolRenderer("flooded_pct", ranges)
-    layer.setRenderer(renderer)
+def style_profile(layer) -> None:
+    """Render the detailed profile points as small grey dots."""
+    symbol = QgsMarkerSymbol.createSimple(
+        {"name": "circle", "color": "#9e9e9e", "size": "1.4",
+         "outline_style": "no"})
+    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
     layer.triggerRepaint()

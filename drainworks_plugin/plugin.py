@@ -67,15 +67,24 @@ class DrainworksPlugin:
             self.toolbar = None
 
     # ------------------------------------------------------------- actions
+    def reload_pipeline_layers(self):
+        """Reload + restyle the GeoPackage layers (after enrich/berging)."""
+        if not self.gpkg_path:
+            return
+        from drainworks_plugin.io.import_controller import load_pipeline_layers
+        manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(self.gpkg_path)
+        self.manhole_layer = manhole_layer
+        self.pipe_layer = pipe_layer
+        self.layer_group = group
+        if self.dock is not None:
+            self.dock.manhole_layer = manhole_layer
+            self.dock.pipe_layer = pipe_layer
+        self.iface.mapCanvas().refresh()
+
     def on_import(self):
         """Open the import dialog, import the file, and feed the dock."""
         from qgis.PyQt.QtWidgets import QDialog
 
-        from drainworks_plugin.io.import_controller import (
-            import_ribx,
-            import_sufrib,
-            load_geopackage_layers,
-        )
         from drainworks_plugin.ui.import_dialog import ImportDialog
 
         dialog = ImportDialog(self.iface.mainWindow())
@@ -87,22 +96,20 @@ class DrainworksPlugin:
         lower = input_path.lower()
         try:
             if lower.endswith(".gpkg"):
-                manhole_layer, pipe_layer, group = load_geopackage_layers(input_path)
-            elif lower.endswith((".rib", ".hel")):
-                manhole_layer, pipe_layer, group = import_sufrib(
-                    input_path, meas_path or None, gpkg_path, correct_bob=correct_bob
-                )
+                gpkg_out = input_path
             else:
-                manhole_layer, pipe_layer, group = import_ribx(
-                    input_path, gpkg_path, correct_bob=correct_bob
-                )
+                from drainworks_plugin.io.import_controller import import_to_base
+                import_to_base(input_path, meas_path or None, gpkg_path)
+                gpkg_out = gpkg_path
+            from drainworks_plugin.io.import_controller import load_pipeline_layers
+            manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         except Exception as exc:  # surface to the user, don't crash QGIS
             self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
             return
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.layer_group = group
-        self.gpkg_path = input_path if input_path.lower().endswith(".gpkg") else gpkg_path
+        self.gpkg_path = gpkg_out
         self._zoom_to_layers([pipe_layer, manhole_layer])
         if self.dock is not None:
             self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path)
@@ -136,30 +143,3 @@ class DrainworksPlugin:
         canvas.setExtent(extent)
         canvas.refresh()
 
-    def on_compute_loss(self, correct_bob=False):
-        """Compute lost capacity and load the styled measurements layer."""
-        if self.gpkg_path is None:
-            self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
-            return
-        from qgis.core import QgsVectorLayer
-
-        from drainworks_plugin.io.import_controller import add_layer_to_group
-        from drainworks_plugin.lostcapacity.runner import compute_and_store
-        from drainworks_plugin.styling.symbology import style_berging_lines
-
-        try:
-            n = compute_and_store(self.gpkg_path, correct_bob=correct_bob)
-        except Exception as exc:
-            self.iface.messageBar().pushCritical("Drainworks", f"Computation failed: {exc}")
-            return
-
-        # Replace any previous berging layer, then load the aggregated lines.
-        from qgis.core import QgsProject
-
-        for lyr in QgsProject.instance().mapLayersByName("Verloren berging"):
-            QgsProject.instance().removeMapLayer(lyr.id())
-        layer = QgsVectorLayer(f"{self.gpkg_path}|layername=berging", "Verloren berging", "ogr")
-        if layer.isValid():
-            style_berging_lines(layer)
-            add_layer_to_group(layer, self.layer_group, on_top=True)
-        self.iface.messageBar().pushSuccess("Drainworks", f"Verloren berging berekend ({n} punten).")
