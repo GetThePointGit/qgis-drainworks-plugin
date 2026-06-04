@@ -5,14 +5,17 @@ labeling configuration, so combinations can be applied independently.
 """
 
 from qgis.core import (
+    QgsGraduatedSymbolRenderer,
     QgsLineSymbol,
     QgsMarkerSymbol,
     QgsPalLayerSettings,
     QgsProperty,
+    QgsRendererRange,
     QgsSingleSymbolRenderer,
     QgsSymbolLayer,
     QgsVectorLayerSimpleLabeling,
 )
+from qgis.PyQt.QtGui import QColor
 
 from drainworks_plugin.styling.colors import MANHOLE_DEFAULT, PIPE_DEFAULT
 
@@ -58,6 +61,19 @@ def _ramp_expr(field, mn, mx, ramp="Spectral"):
     return f"ramp_color('{ramp}', scale_linear(\"{field}\", {mn}, {mx}, 1, 0))"
 
 
+def _graduated(field, mn, mx, make_symbol, classes=5):
+    """Build a QgsGraduatedSymbolRenderer over ``field`` (mn..mx), blue->red."""
+    colors = ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"]
+    ranges = []
+    step = (mx - mn) / classes if mx > mn else 1.0
+    for i in range(classes):
+        lo = mn + i * step
+        hi = mn + (i + 1) * step if i < classes - 1 else mx + 1e-9
+        symbol = make_symbol(colors[i])
+        ranges.append(QgsRendererRange(lo, hi, symbol, f"{lo:.2f}–{hi:.2f}"))
+    return QgsGraduatedSymbolRenderer(field, ranges)
+
+
 def _apply_label(layer, expression):
     if expression is None:
         layer.setLabelsEnabled(False)
@@ -73,25 +89,24 @@ def _apply_label(layer, expression):
 
 
 def apply_pipe_style(layer, color_mode, width_mode, label_mode):
-    symbol = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
-    sl = symbol.symbolLayer(0)
+    def _line(color):
+        s = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
+        s.setColor(QColor(color))
+        if width_mode == PIPE_WIDTH_DIAMETER:
+            mn, mx = _minmax(layer, "diameter")
+            expr = f'scale_linear("diameter", {mn}, {mx}, 0.4, 3.0)'
+            s.symbolLayer(0).setDataDefinedProperty(
+                QgsSymbolLayer.PropertyStrokeWidth, QgsProperty.fromExpression(expr))
+        return s
 
     if color_mode == PIPE_COLOR_BOB:
         mn, mx = _minmax(layer, "bob_avg")
-        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeColor,
-                                  QgsProperty.fromExpression(_ramp_expr("bob_avg", mn, mx)))
+        layer.setRenderer(_graduated("bob_avg", mn, mx, _line))
     elif color_mode == PIPE_COLOR_SLOPE:
         mn, mx = _minmax(layer, "slope")
-        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeColor,
-                                  QgsProperty.fromExpression(_ramp_expr("slope", mn, mx)))
-
-    if width_mode == PIPE_WIDTH_DIAMETER:
-        mn, mx = _minmax(layer, "diameter")
-        expr = f'scale_linear("diameter", {mn}, {mx}, 0.4, 3.0)'
-        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyStrokeWidth,
-                                  QgsProperty.fromExpression(expr))
-
-    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+        layer.setRenderer(_graduated("slope", mn, mx, _line))
+    else:
+        layer.setRenderer(QgsSingleSymbolRenderer(_line(PIPE_DEFAULT)))
 
     label_expr = {
         PIPE_LABEL_NONE: None,
@@ -104,22 +119,19 @@ def apply_pipe_style(layer, color_mode, width_mode, label_mode):
 
 
 def apply_manhole_style(layer, color_mode, label_mode):
-    symbol = QgsMarkerSymbol.createSimple(
-        {"name": "circle", "color": MANHOLE_DEFAULT, "size": "2.4",
-         "outline_color": "#ffffff", "outline_width": "0.2"}
-    )
-    sl = symbol.symbolLayer(0)
+    def _marker(color):
+        return QgsMarkerSymbol.createSimple(
+            {"name": "circle", "color": color, "size": "2.4",
+             "outline_color": "#ffffff", "outline_width": "0.2"})
 
     if color_mode == MANHOLE_COLOR_BOTTOM:
         mn, mx = _minmax(layer, "bottom_level")
-        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor,
-                                  QgsProperty.fromExpression(_ramp_expr("bottom_level", mn, mx)))
+        layer.setRenderer(_graduated("bottom_level", mn, mx, _marker))
     elif color_mode == MANHOLE_COLOR_GROUND:
         mn, mx = _minmax(layer, "ground_level")
-        sl.setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor,
-                                  QgsProperty.fromExpression(_ramp_expr("ground_level", mn, mx)))
-
-    layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+        layer.setRenderer(_graduated("ground_level", mn, mx, _marker))
+    else:
+        layer.setRenderer(QgsSingleSymbolRenderer(_marker(MANHOLE_DEFAULT)))
 
     label_expr = {
         MANHOLE_LABEL_NONE: None,

@@ -37,6 +37,7 @@ class Profile:
     pipe_spans: list = field(default_factory=list)  # (pipe_code, start_dist, end_dist)
     ideal: list = field(default_factory=list)       # (dist, bob) straight bob1->bob2 line
     manholes: list = field(default_factory=list)    # (dist, manhole_code) along the route
+    manhole_levels: list = field(default_factory=list)  # (dist, code, bottom_bob, ground_level)
 
 
 def _diameter(pipe) -> float:
@@ -44,7 +45,7 @@ def _diameter(pipe) -> float:
 
 
 def build_profile(path, pipes: dict, measurements_by_pipe=None,
-                  observations_by_pipe=None) -> Profile:
+                  observations_by_pipe=None, manholes_by_code=None) -> Profile:
     """Build a Profile from a network Path.
 
     Parameters
@@ -59,9 +60,12 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
     observations_by_pipe : dict[str, list[rgs_ribx.Observation]] or None
         Observations keyed by pipe code; each has ``distance`` from the pipe's
         own start node.
+    manholes_by_code : dict[str, rgs_ribx.Manhole] or None
+        Manhole objects keyed by code, used to extract ground_level for each put.
     """
     measurements_by_pipe = measurements_by_pipe or {}
     observations_by_pipe = observations_by_pipe or {}
+    manholes_by_code = manholes_by_code or {}
     profile = Profile()
     cumulative = 0.0
 
@@ -72,6 +76,10 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
         diam = _diameter(pipe)
         span_start = cumulative
         profile.manholes.append((span_start, from_node))
+        start_bob_here = pipe.bob1 if forward else pipe.bob2
+        gl = getattr(manholes_by_code.get(from_node), "ground_level", None)
+        if start_bob_here is not None:
+            profile.manhole_levels.append((span_start, from_node, start_bob_here, gl))
         span_end = cumulative + length
 
         measured = measurements_by_pipe.get(pipe_code)
@@ -127,5 +135,14 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
     # Final manhole at the end of the route.
     if path.manholes:
         profile.manholes.append((cumulative, path.manholes[-1]))
+
+    if path.manholes and path.pipe_codes:
+        last = path.manholes[-1]
+        last_pipe = pipes[path.pipe_codes[-1]]
+        forward_last = last_pipe.manhole1 == path.manholes[-2] if len(path.manholes) >= 2 else True
+        last_bob = last_pipe.bob2 if forward_last else last_pipe.bob1
+        gl = getattr(manholes_by_code.get(last), "ground_level", None)
+        if last_bob is not None:
+            profile.manhole_levels.append((cumulative, last, last_bob, gl))
 
     return profile

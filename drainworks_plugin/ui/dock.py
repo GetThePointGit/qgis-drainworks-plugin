@@ -1,12 +1,11 @@
 """The main Drainworks dock widget.
 
-Hosts the action buttons (import / trajectory / lost capacity), a filterable
-sink selector, the trajectory table (A, B, C … with manhole code, distance and a
-delete button), and the embedded pyqtgraph side-view. It also owns the
-trajectory state and draws the route + lettered markers on the canvas.
+Hosts the three pipeline step buttons (import / enrich / lost storage), a sink
+selector with a per-row-delete table, a contextual trajectory edit bar, and the
+embedded pyqtgraph side-view. It also owns the trajectory state and draws the
+route + lettered markers on the canvas.
 """
 
-import math
 import os
 import string
 
@@ -14,7 +13,6 @@ from qgis.core import QgsPointXY
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
-    QAbstractItemView,
     QDockWidget,
     QHBoxLayout,
     QLabel,
@@ -40,13 +38,6 @@ def _icon(name):
     return QIcon(os.path.join(ICONS, name))
 
 
-def _flooded_area(point):
-    """Flooded cross-section area (m²) of a measurement point (circular pipe)."""
-    pct = point.get("flooded_pct") or 0.0
-    diameter = (point["obb"] - point["bob"])
-    return pct * math.pi * (diameter / 2.0) ** 2
-
-
 class DrainworksDock(QDockWidget):
     """Main control panel; docked on the right."""
 
@@ -65,8 +56,11 @@ class DrainworksDock(QDockWidget):
         self.pipe_geoms = {}
         self.manhole_points = {}
         self.measurements_by_pipe = {}
+        self._manholes_by_code = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
+        from drainworks_plugin.trajectory.history import WaypointHistory
+        self.history = WaypointHistory()
         self.sinks = set()
         self.computed_sinks = None  # sinks at the last berging computation
         from drainworks_plugin.pipeline.state import PipelineState
@@ -82,6 +76,7 @@ class DrainworksDock(QDockWidget):
         }
 
         self._build_ui()
+        self.side_view.apply_settings(self._load_sideview_settings())
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -100,7 +95,7 @@ class DrainworksDock(QDockWidget):
                                           checkable=True)
         self.btn_downstream = self._tool_button("Stroomafw.", "trajectory.svg",
                                                 self._on_downstream)
-        self.btn_style = self._tool_button("Opmaak", "lost_capacity.svg", self._on_style)
+        self.btn_style = self._tool_button("Opmaak", "brush.svg", self._on_style)
         actions.addWidget(self.btn_import)
         actions.addWidget(self.btn_traj)
         actions.addWidget(self.btn_downstream)
@@ -142,42 +137,49 @@ class DrainworksDock(QDockWidget):
         sink_row = QHBoxLayout()
         self.sink_combo = ExtendedCombo()
         add_sink = QToolButton()
-        add_sink.setIcon(_icon("sink.svg"))
+        add_sink.setText("+")
         add_sink.setToolTip("Voeg de geselecteerde put toe als sink")
         add_sink.clicked.connect(self._on_add_sink)
         self.btn_sink_map = QPushButton("Kaart")
         self.btn_sink_map.setCheckable(True)
         self.btn_sink_map.setToolTip("Kies een sink-put door deze op de kaart aan te klikken")
         self.btn_sink_map.clicked.connect(self._on_sink_map_toggled)
-        clear_sink = QPushButton("Wis")
-        clear_sink.clicked.connect(self._on_clear_sinks)
         sink_row.addWidget(self.sink_combo, 1)
         sink_row.addWidget(add_sink)
         sink_row.addWidget(self.btn_sink_map)
-        sink_row.addWidget(clear_sink)
         left_layout.addLayout(sink_row)
-        self.sink_label = QLabel("geen sinks gekozen")
-        self.sink_label.setStyleSheet("color: #666;")
-        self.sink_label.setWordWrap(True)
-        left_layout.addWidget(self.sink_label)
+
+        self.sink_table = QTableWidget(0, 2)
+        self.sink_table.setHorizontalHeaderLabels(["Sink", ""])
+        self.sink_table.verticalHeader().setVisible(False)
+        self.sink_table.setColumnWidth(1, 30)
+        self.sink_table.setMaximumHeight(120)
+        left_layout.addWidget(self.sink_table)
 
         self.btn_loss = QPushButton(_icon("lost_capacity.svg"), "Bereken berging")
         self.btn_loss.clicked.connect(self._on_loss)
         left_layout.addWidget(self.btn_loss)
 
         left_layout.addWidget(QLabel("Traject (klik putten op de kaart):"))
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["", "Put", "Afst. (m)", ""])
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setColumnWidth(0, 24)
-        self.table.setColumnWidth(2, 70)
-        self.table.setColumnWidth(3, 30)
-        left_layout.addWidget(self.table, 1)
-        clear_traj = QPushButton("Wis traject")
-        clear_traj.setToolTip("Verwijder alle gekozen punten")
-        clear_traj.clicked.connect(self._on_reset)
-        left_layout.addWidget(clear_traj)
+        self.traj_bar = QWidget()
+        traj_layout = QHBoxLayout(self.traj_bar)
+        traj_layout.setContentsMargins(0, 0, 0, 0)
+        self.btn_traj_downstream = QPushButton("Stroomafw.")
+        self.btn_traj_downstream.clicked.connect(self._on_downstream)
+        self.btn_traj_delmode = QPushButton("Verwijdermodus")
+        self.btn_traj_delmode.setCheckable(True)
+        self.btn_traj_clear = QPushButton("Wis")
+        self.btn_traj_clear.clicked.connect(self._on_reset)
+        self.btn_traj_undo = QPushButton("↶")
+        self.btn_traj_undo.clicked.connect(self._on_undo)
+        self.btn_traj_redo = QPushButton("↷")
+        self.btn_traj_redo.clicked.connect(self._on_redo)
+        for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
+                  self.btn_traj_undo, self.btn_traj_redo):
+            traj_layout.addWidget(b)
+        self.traj_bar.setVisible(False)
+        left_layout.addWidget(self.traj_bar)
+        left_layout.addStretch(1)
         left.setMaximumWidth(340)
 
         # --- Right: longitudinal profile. ---
@@ -185,11 +187,15 @@ class DrainworksDock(QDockWidget):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(4, 4, 4, 4)
         header = QHBoxLayout()
-        header.addWidget(QLabel("Langsprofiel:"))
         header.addStretch()
         self.volume_label = QLabel("")
         self.volume_label.setStyleSheet("color: #2c7fb8; font-weight: bold;")
         header.addWidget(self.volume_label)
+        self.btn_sv_settings = QToolButton()
+        self.btn_sv_settings.setText("⚙")
+        self.btn_sv_settings.setToolTip("Langsprofiel-instellingen")
+        self.btn_sv_settings.clicked.connect(self._on_sideview_settings)
+        header.addWidget(self.btn_sv_settings)
         right_layout.addLayout(header)
         self.side_view = SideViewWidget()
         self.side_view.hovered.connect(self._on_graph_hover)
@@ -203,6 +209,32 @@ class DrainworksDock(QDockWidget):
 
         self.setWidget(splitter)
         self._set_data_enabled(False)
+
+    SV_SETTINGS_KEY = "drainworks/sideview"
+
+    def _load_sideview_settings(self):
+        import json
+        from qgis.core import QgsSettings
+        from drainworks_plugin.sideview.settings import SideViewSettings
+        raw = QgsSettings().value(self.SV_SETTINGS_KEY, "", type=str)
+        try:
+            data = json.loads(raw) if raw else {}
+        except ValueError:
+            data = {}
+        return SideViewSettings.from_dict(data)
+
+    def _on_sideview_settings(self):
+        import json
+        from qgis.core import QgsSettings
+        from qgis.PyQt.QtWidgets import QDialog
+        from drainworks_plugin.ui.sideview_settings_dialog import SideViewSettingsDialog
+        current = self._load_sideview_settings()
+        dialog = SideViewSettingsDialog(current, self.iface.mainWindow())
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        new = dialog.values()
+        QgsSettings().setValue(self.SV_SETTINGS_KEY, json.dumps(new.to_dict()))
+        self.side_view.apply_settings(new)
 
     def _tool_button(self, text, icon_name, slot, checkable=False):
         button = QToolButton()
@@ -243,13 +275,17 @@ class DrainworksDock(QDockWidget):
 
         # Sink combo + existing sinks.
         manholes = read_manholes(self.gpkg_path)
+        self._manholes_by_code = {m.code: m for m in manholes}
         self.sink_combo.clear()
         self.sink_combo.addItems(sorted(m.code for m in manholes))
         self.sinks = {m.code for m in manholes if m.is_sink}
-        # Treat the loaded sinks as the baseline (not stale until they change).
-        self.computed_sinks = set(self.sinks) if self.sinks else None
-        self._update_sink_label()
-        self._update_berging_button()
+        self._update_sink_table()
+
+        for lyr in (pipe_layer, manhole_layer):
+            try:
+                lyr.afterCommitChanges.connect(self._on_base_edited)
+            except (AttributeError, TypeError):
+                pass
 
         if self.graphics is None:
             self.graphics = TrajectoryGraphics(self.iface.mapCanvas())
@@ -263,6 +299,11 @@ class DrainworksDock(QDockWidget):
     # ------------------------------------------------------------ actions
     def _on_import(self):
         self.plugin.on_import()
+
+    def _on_base_edited(self):
+        """Layer edits committed: mark enrich/berging stale."""
+        self.state.mark_base_edited()
+        self._refresh_step_buttons()
 
     def _read_profile_for_sideview(self):
         """Read the profile layer into {code: [dict(dist,bob,obb,flooded_pct,water_level)]}."""
@@ -402,13 +443,16 @@ class DrainworksDock(QDockWidget):
             return
         for code in path[1:]:
             self.waypoints.append(code)
-        self._rebuild()
+        self._commit_waypoints()
 
     def _on_traj_toggled(self, checked):
+        self.traj_bar.setVisible(checked)
         if checked:
-            self.btn_sink_map.setChecked(False)  # exclusive with sink-pick
-            self._activate_tool(self._on_pick, self._on_reset)
+            self.btn_sink_map.setChecked(False)
+            self._activate_tool(self._on_pick, self._on_reset, editing=True)
+            self._sync_traj_buttons()
         else:
+            self.btn_traj_delmode.setChecked(False)
             self._clear_tool()
 
     def _on_sink_map_toggled(self, checked):
@@ -418,7 +462,7 @@ class DrainworksDock(QDockWidget):
         else:
             self._clear_tool()
 
-    def _activate_tool(self, on_pick, on_reset):
+    def _activate_tool(self, on_pick, on_reset, editing=False):
         from drainworks_plugin.trajectory.map_tool import TrajectoryMapTool
 
         if self.manhole_layer is None:
@@ -426,8 +470,12 @@ class DrainworksDock(QDockWidget):
         canvas = self.iface.mapCanvas()
         if self.map_tool is not None:
             canvas.unsetMapTool(self.map_tool)
+        # ctrl-click delete + drag-move only apply to trajectory editing, not sink-pick.
+        ctrl_pick = self._on_ctrl_pick if editing else None
+        drag = self._on_drag if editing else None
         self.map_tool = TrajectoryMapTool(canvas, self.manhole_layer, on_pick, on_reset,
-                                          on_move=self._on_map_hover)
+                                          on_move=self._on_map_hover,
+                                          on_ctrl_pick=ctrl_pick, on_drag=drag)
         canvas.setMapTool(self.map_tool)
 
     def _clear_tool(self):
@@ -450,29 +498,26 @@ class DrainworksDock(QDockWidget):
             self.sinks.add(code)
             self._apply_sinks()
 
-    def _on_clear_sinks(self):
-        self.sinks.clear()
+    def _update_sink_table(self):
+        codes = sorted(self.sinks)
+        self.sink_table.setRowCount(len(codes))
+        for i, code in enumerate(codes):
+            self.sink_table.setItem(i, 0, QTableWidgetItem(code))
+            btn = QPushButton("✕"); btn.setFixedWidth(28)
+            btn.clicked.connect(lambda _c, c=code: self._remove_sink(c))
+            self.sink_table.setCellWidget(i, 1, btn)
+
+    def _remove_sink(self, code):
+        self.sinks.discard(code)
         self._apply_sinks()
 
     def _apply_sinks(self):
         # Sinks are persisted to the GeoPackage only when the berging is computed
         # (see _on_loss), so changing them just updates the UI + staleness state.
-        self._update_sink_label()
+        self._update_sink_table()
         self._update_sink_markers()
-        self._update_berging_button()
         self.state.mark_sinks_changed()
         self._refresh_step_buttons()
-
-    def _update_berging_button(self):
-        """Reflect whether the berging is up to date with the current sinks."""
-        if not hasattr(self, "btn_loss"):
-            return
-        if self.computed_sinks is not None and self.sinks != self.computed_sinks:
-            self.btn_loss.setText("Herbereken berging")
-            self.btn_loss.setStyleSheet("color: #c54141; font-weight: bold;")
-        else:
-            self.btn_loss.setText("Bereken berging")
-            self.btn_loss.setStyleSheet("")
 
     def _update_sink_markers(self):
         if self.graphics is None:
@@ -481,18 +526,44 @@ class DrainworksDock(QDockWidget):
                   if c in self.manhole_points]
         self.graphics.set_sink_markers(points)
 
-    def _update_sink_label(self):
-        if self.sinks:
-            self.sink_label.setText("sinks: " + ", ".join(sorted(self.sinks)))
-            self.sink_label.setStyleSheet("color: #0079c1;")
-        else:
-            self.sink_label.setText("geen sinks gekozen")
-            self.sink_label.setStyleSheet("color: #666;")
-
     # -------------------------------------------------------- trajectory
-    def _on_pick(self, code):
-        self._insert_waypoint(code)
+    def _commit_waypoints(self, push=True):
+        """Persist the current waypoints to history and rebuild everything."""
+        if push:
+            self.history.set(self.waypoints)
+        self._sync_traj_buttons()
         self._rebuild()
+
+    def _sync_traj_buttons(self):
+        self.btn_traj_undo.setEnabled(self.history.can_undo())
+        self.btn_traj_redo.setEnabled(self.history.can_redo())
+
+    def _on_undo(self):
+        self.waypoints = self.history.undo()
+        self._commit_waypoints(push=False)
+
+    def _on_redo(self):
+        self.waypoints = self.history.redo()
+        self._commit_waypoints(push=False)
+
+    def _on_ctrl_pick(self, code):
+        if code in self.waypoints:
+            self.waypoints.remove(code)
+            self._commit_waypoints()
+
+    def _on_drag(self, from_code, to_code):
+        if from_code in self.waypoints and to_code not in self.waypoints:
+            self.waypoints[self.waypoints.index(from_code)] = to_code
+            self._commit_waypoints()
+
+    def _on_pick(self, code):
+        if self.btn_traj_delmode.isChecked():
+            if code in self.waypoints:
+                self.waypoints.remove(code)
+                self._commit_waypoints()
+            return
+        self._insert_waypoint(code)
+        self._commit_waypoints()
 
     def _insert_waypoint(self, code):
         """Insert a put at the cheapest position: a tussenpunt mid-route, or
@@ -562,47 +633,12 @@ class DrainworksDock(QDockWidget):
 
     def _on_reset(self):
         self.waypoints = []
-        self._rebuild()
-
-    def _delete_waypoint(self, index):
-        if 0 <= index < len(self.waypoints):
-            del self.waypoints[index]
-            self._rebuild()
+        self._commit_waypoints()
 
     def _rebuild(self):
-        """Recompute route, refresh table, map graphics and side-view."""
-        cumulative = self._cumulative_distances()
-        self._update_table(cumulative)
+        """Recompute route, refresh map graphics and side-view."""
         self._update_graphics()
         self._update_side_view()
-
-    def _cumulative_distances(self):
-        """Distance along the route at each chosen waypoint (A=0, B, C, …)."""
-        cumulative = [0.0]
-        if self.network is None:
-            return cumulative * len(self.waypoints)
-        total = 0.0
-        for a, b in zip(self.waypoints, self.waypoints[1:]):
-            try:
-                total += self.network.shortest_path(a, b).total_length
-            except ValueError:
-                total = float("nan")
-            cumulative.append(total)
-        return cumulative[: len(self.waypoints)]
-
-    def _update_table(self, cumulative):
-        self.table.setRowCount(len(self.waypoints))
-        for i, code in enumerate(self.waypoints):
-            letter = LETTERS[i] if i < len(LETTERS) else str(i + 1)
-            dist = cumulative[i] if i < len(cumulative) else float("nan")
-            dist_text = "—" if dist != dist else f"{dist:.0f}"  # NaN check
-            self.table.setItem(i, 0, QTableWidgetItem(letter))
-            self.table.setItem(i, 1, QTableWidgetItem(code))
-            self.table.setItem(i, 2, QTableWidgetItem(dist_text))
-            delete = QPushButton("✕")
-            delete.setFixedWidth(28)
-            delete.clicked.connect(lambda _checked, idx=i: self._delete_waypoint(idx))
-            self.table.setCellWidget(i, 3, delete)
 
     def _update_graphics(self):
         if self.graphics is None:
@@ -624,6 +660,12 @@ class DrainworksDock(QDockWidget):
                 geoms = []
         self.graphics.set_route(geoms)
 
+        if self.waypoints:
+            xy = self.manhole_points.get(self.waypoints[-1])
+            self.graphics.set_active(QgsPointXY(*xy) if xy else None)
+        else:
+            self.graphics.set_active(None)
+
     def _update_side_view(self):
         if self.network is None or len(self.waypoints) < 2:
             self.side_view.clear()
@@ -638,10 +680,24 @@ class DrainworksDock(QDockWidget):
             self.volume_label.setText("")
             self.route_polyline = []
             return
-        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe)
+        profile = build_profile(route, self.pipes_by_code, self.measurements_by_pipe,
+                                manholes_by_code=self._manholes_by_code)
         self.side_view.show_profile(profile)
         self.route_polyline = self._build_route_polyline(route)
-        self._update_volume(route)
+        from drainworks_plugin.sideview.berging import route_berging
+        segments_by_pipe = self._read_segments_by_pipe()
+        water, volume = route_berging(route, self.pipes_by_code, segments_by_pipe)
+        self.side_view.show_water(water)
+        self.volume_label.setText(f"Verloren berging: {volume:.2f} m³" if volume else "")
+
+    def _read_segments_by_pipe(self):
+        if not self.gpkg_path:
+            return {}
+        from drainworks_plugin.io.geopackage_store import read_segments
+        by_pipe = {}
+        for seg in read_segments(self.gpkg_path):
+            by_pipe.setdefault(seg["pipe_code"], []).append(seg)
+        return by_pipe
 
     def _build_route_polyline(self, route):
         """Return [(cumulative_dist, QgsPointXY)] along the oriented route geometry."""
@@ -687,31 +743,6 @@ class DrainworksDock(QDockWidget):
                 return QgsPointXY(p0.x() + (p1.x() - p0.x()) * t,
                                   p0.y() + (p1.y() - p0.y()) * t)
         return poly[-1][1]
-
-    def _update_volume(self, route):
-        """Show the lost-storage volume integrated along the route."""
-        volume = self._route_lost_volume(route)
-        if volume is None:
-            self.volume_label.setText("")
-        else:
-            self.volume_label.setText(f"Verloren berging: {volume:.2f} m³")
-
-    def _route_lost_volume(self, route):
-        """Integrate flooded cross-section area over the route (m³), or None."""
-        any_flood = False
-        total = 0.0
-        for code in route.pipe_codes:
-            points = self.measurements_by_pipe.get(code) or []
-            for a, b in zip(points, points[1:]):
-                seg = b["dist"] - a["dist"]
-                if seg <= 0:
-                    continue
-                area_a = _flooded_area(a)
-                area_b = _flooded_area(b)
-                if a.get("flooded_pct") is not None or b.get("flooded_pct") is not None:
-                    any_flood = True
-                total += 0.5 * (area_a + area_b) * seg
-        return total if any_flood else None
 
     # ------------------------------------------------------------ teardown
     def deactivate_tool(self):
