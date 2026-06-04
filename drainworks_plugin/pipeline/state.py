@@ -47,6 +47,18 @@ class PipelineState:
         """Sinks changed: only the berging is affected."""
         self.berging_stale = True
 
+    def restore(self, enrich_ran, enrich_fresh, berging_ran, berging_fresh):
+        """Set the flags from persisted state on load.
+
+        A step that has not run, or whose stored output no longer matches the data,
+        is stale (needs running).
+        """
+        self.imported = True
+        self.enrich_ran = enrich_ran
+        self.berging_ran = berging_ran
+        self.enrich_stale = (not enrich_ran) or (not enrich_fresh)
+        self.berging_stale = (not berging_ran) or (not berging_fresh)
+
     def enrich_label(self):
         """Button text for step 2 (stale + previously run -> 'opnieuw')."""
         return "Verrijk opnieuw" if (self.enrich_stale and self.enrich_ran) else "Verrijk basisdata"
