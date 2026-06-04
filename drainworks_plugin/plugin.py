@@ -90,7 +90,7 @@ class DrainworksPlugin:
         dialog = ImportDialog(self.iface.mainWindow())
         if dialog.exec_() != QDialog.Accepted:
             return
-        input_path, meas_path, gpkg_path, correct_bob = dialog.values()
+        input_path, meas_path, gpkg_path = dialog.values()
         if not input_path:
             return
         lower = input_path.lower()
@@ -104,7 +104,7 @@ class DrainworksPlugin:
             from drainworks_plugin.io.import_controller import load_pipeline_layers
             manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         except Exception as exc:  # surface to the user, don't crash QGIS
-            self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
+            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
             return
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
@@ -116,8 +116,8 @@ class DrainworksPlugin:
             self.dock.show()
         self.iface.messageBar().pushSuccess(
             "Drainworks",
-            f"Imported {pipe_layer.featureCount()} pipes, "
-            f"{manhole_layer.featureCount()} manholes.",
+            f"Geïmporteerd: {pipe_layer.featureCount()} leidingen, "
+            f"{manhole_layer.featureCount()} putten.",
         )
 
     def _zoom_to_layers(self, layers):
