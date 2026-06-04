@@ -59,6 +59,7 @@ class DrainworksDock(QDockWidget):
         self._manholes_by_code = {}
         self.route_polyline = []  # [(cumulative_dist, QgsPointXY)] for graph<->map hover
         self.waypoints = []
+        self.active_code = None
         from drainworks_plugin.trajectory.history import WaypointHistory
         self.history = WaypointHistory()
         self.sinks = set()
@@ -523,6 +524,7 @@ class DrainworksDock(QDockWidget):
             return
         for code in path[1:]:
             self.waypoints.append(code)
+        self.active_code = self.waypoints[-1]
         self._commit_waypoints()
 
     def _on_traj_toggled(self, checked):
@@ -627,29 +629,36 @@ class DrainworksDock(QDockWidget):
 
     def _on_undo(self):
         self.waypoints = self.history.undo()
+        self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_redo(self):
         self.waypoints = self.history.redo()
+        self.active_code = self.waypoints[-1] if self.waypoints else None
         self._commit_waypoints(push=False)
 
     def _on_ctrl_pick(self, code):
         if code in self.waypoints:
             self.waypoints.remove(code)
+            self.active_code = self.waypoints[-1] if self.waypoints else None
             self._commit_waypoints()
 
     def _on_drag(self, from_code, to_code):
         if from_code in self.waypoints and to_code not in self.waypoints:
             self.waypoints[self.waypoints.index(from_code)] = to_code
+            self.active_code = to_code
             self._commit_waypoints()
 
     def _on_pick(self, code):
         if self.btn_traj_delmode.isChecked():
             if code in self.waypoints:
                 self.waypoints.remove(code)
+                self.active_code = self.waypoints[-1] if self.waypoints else None
+                self.btn_traj_delmode.setChecked(False)
                 self._commit_waypoints()
             return
         self._insert_waypoint(code)
+        self.active_code = code
         self._commit_waypoints()
 
     def _insert_waypoint(self, code):
@@ -720,6 +729,7 @@ class DrainworksDock(QDockWidget):
 
     def _on_reset(self):
         self.waypoints = []
+        self.active_code = None
         self._commit_waypoints()
 
     def _rebuild(self):
@@ -747,11 +757,9 @@ class DrainworksDock(QDockWidget):
                 geoms = []
         self.graphics.set_route(geoms)
 
-        if self.waypoints:
-            xy = self.manhole_points.get(self.waypoints[-1])
-            self.graphics.set_active(QgsPointXY(*xy) if xy else None)
-        else:
-            self.graphics.set_active(None)
+        active = self.active_code if self.active_code in self.waypoints else None
+        xy = self.manhole_points.get(active) if active else None
+        self.graphics.set_active(QgsPointXY(*xy) if xy else None)
 
     def _update_side_view(self):
         if self.network is None or len(self.waypoints) < 2:

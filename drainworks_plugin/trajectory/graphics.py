@@ -111,8 +111,9 @@ class TrajectoryGraphics:
         if self.active_marker is None:
             self.active_marker = QgsVertexMarker(self.canvas)
             self.active_marker.setIconType(QgsVertexMarker.ICON_CIRCLE)
-            self.active_marker.setColor(QColor("#00a0e9"))
-            self.active_marker.setIconSize(24)
+            self.active_marker.setColor(QColor("#0079c1"))
+            self.active_marker.setFillColor(QColor(0, 121, 193, 70))
+            self.active_marker.setIconSize(26)
             self.active_marker.setPenWidth(3)
         if point is None:
             self.active_marker.hide()
