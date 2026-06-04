@@ -57,11 +57,13 @@ def load_pipeline_layers(gpkg_path):
     if segments_layer.isValid():
         style_segments(segments_layer)
 
-    # Draw order top->bottom: manholes, pipes, segments. The profile points feed the
-    # side-view (read from the gpkg) and are intentionally not added to the map.
-    ordered = [manhole_layer, pipe_layer]
+    # Draw order top->bottom: manholes, segments, pipes (segments draw on top of the
+    # pipes). The profile points feed the side-view (read from the gpkg) and are
+    # intentionally not added to the map.
+    ordered = [manhole_layer]
     if segments_layer.isValid():
         ordered.append(segments_layer)
+    ordered.append(pipe_layer)
     for layer in ordered:
         project.addMapLayer(layer, False)
         group.addLayer(layer)
