@@ -74,6 +74,7 @@ class DrainworksDock(QDockWidget):
             "pipe_color": _v.PIPE_COLOR_DEFAULT, "pipe_width": _v.PIPE_WIDTH_DEFAULT,
             "pipe_label": _v.PIPE_LABEL_NONE, "manhole_color": _v.MANHOLE_COLOR_DEFAULT,
             "manhole_label": _v.MANHOLE_LABEL_NONE,
+            "segment_color": _v.SEGMENT_COLOR_FLOODED,
         }
 
         self._build_ui()
@@ -518,7 +519,8 @@ class DrainworksDock(QDockWidget):
         if self.pipe_layer is None or self.manhole_layer is None:
             self.iface.messageBar().pushWarning("Drainworks", "Importeer eerst data.")
             return
-        from drainworks_plugin.styling.views import apply_manhole_style, apply_pipe_style
+        from drainworks_plugin.styling.views import (
+            apply_manhole_style, apply_pipe_style, apply_segment_style)
         from drainworks_plugin.ui.style_dialog import StyleDialog
         from qgis.PyQt.QtWidgets import QDialog
 
@@ -530,6 +532,10 @@ class DrainworksDock(QDockWidget):
                          self.style_modes["pipe_width"], self.style_modes["pipe_label"])
         apply_manhole_style(self.manhole_layer, self.style_modes["manhole_color"],
                             self.style_modes["manhole_label"])
+        from qgis.core import QgsProject
+        for seg_layer in QgsProject.instance().mapLayersByName("Segmenten"):
+            apply_segment_style(seg_layer, self.style_modes["segment_color"])
+            self.iface.layerTreeView().refreshLayerSymbology(seg_layer.id())
         self.iface.mapCanvas().refresh()
         self.iface.layerTreeView().refreshLayerSymbology(self.pipe_layer.id())
         self.iface.layerTreeView().refreshLayerSymbology(self.manhole_layer.id())

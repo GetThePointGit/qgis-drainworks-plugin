@@ -13,7 +13,7 @@ STATUS_COLORS = {
 }
 
 # Map symbology defaults (visible on a light QGIS canvas).
-PIPE_DEFAULT = "#0079c1"     # blue line — white was invisible on the canvas
+PIPE_DEFAULT = "#4d4d4d"     # dark grey line (coloured segments draw on top)
 MANHOLE_DEFAULT = "#398a39"  # green nodes
 
 # Lost-capacity color ramp endpoints (dry -> fully flooded).

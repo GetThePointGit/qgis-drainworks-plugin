@@ -51,3 +51,14 @@ def test_fast_leaves_profile_water_empty(tmp_gpkg):
     compute_berging(tmp_gpkg, resolution="fast")
     pts = read_profile(tmp_gpkg)["L1"]
     assert all(p.water_level is None for p in pts)
+
+
+def test_accurate_fills_water_depth_max(tmp_gpkg):
+    from drainworks_plugin.io.geopackage_store import read_segments
+    _setup(tmp_gpkg)
+    compute_berging(tmp_gpkg, resolution="accurate")
+    segs = read_segments(tmp_gpkg)
+    # the dip floods -> at least one segment has a positive max water depth
+    assert any((s.get("water_depth_max") or 0) > 0 for s in segs)
+    # depth is never negative
+    assert all((s.get("water_depth_max") or 0) >= 0 for s in segs)

@@ -339,7 +339,7 @@ def set_validation(path, validation) -> None:
 
 
 SEGMENT_BERGING_FIELDS = ["water_level", "flooded_pct", "lost_volume",
-                          "flooded_length", "flooded_pct_max"]
+                          "flooded_length", "flooded_pct_max", "water_depth_max"]
 
 
 def _replace_layer(ds, name) -> None:
