@@ -9,20 +9,50 @@ import rgs_ribx
 from drainworks_plugin.io.geopackage_store import write_base
 
 
-def import_to_base(input_path, measurement_path, gpkg_path):
+def import_to_base(input_path, measurement_path, gpkg_path, on_phase=None):
     """Parse RIBX/SUFRIB and write the step-1 base GeoPackage. Returns the path.
 
     Dispatches by extension: ``.rib``/``.hel`` -> SUFRIB (with optional
     ``measurement_path``), otherwise RIBX. No height integration, no segments —
     those are produced by step 2 (enrich).
+
+    Parameters
+    ----------
+    input_path : str
+        Path to the RIBX or SUFRIB input file.
+    measurement_path : str or None
+        Optional SUFRIB measurement (``.rmb``) companion file.
+    gpkg_path : str
+        Destination GeoPackage path (overwritten).
+    on_phase : callable, optional
+        ``on_phase(text)`` called at each coarse phase ("Inlezen…",
+        "Wegschrijven…") so the caller can show step feedback. Errors in the
+        callback are ignored.
+
+    Returns
+    -------
+    pathlib.Path
+        The written GeoPackage path.
     """
+    def _phase(text):
+        if on_phase is not None:
+            try:
+                on_phase(text)
+            except Exception:  # progress feedback must never break the import
+                pass
+
     lower = input_path.lower()
     if lower.endswith((".rib", ".hel")):
+        _phase("SUFRIB inlezen…")
         paths = [input_path] + ([measurement_path] if measurement_path else [])
         result = rgs_ribx.build_from_sufrib(paths)
     else:
+        _phase("RIBX inlezen…")
         result = rgs_ribx.build_from_ribx(input_path)
-    return write_base(gpkg_path, result.manholes, result.pipes, result.raw_measurements)
+    _phase("GeoPackage wegschrijven…")
+    path = write_base(gpkg_path, result.manholes, result.pipes, result.raw_measurements)
+    _phase("Klaar")
+    return path
 
 
 def load_pipeline_layers(gpkg_path):

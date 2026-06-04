@@ -98,6 +98,11 @@ class DrainworksPlugin:
             return
         # Opening an existing GeoPackage is cheap (no parsing) -> load directly.
         if input_path.lower().endswith(".gpkg"):
+            from drainworks_plugin.io.geopackage_store import check_base_schema
+            problem = check_base_schema(input_path)
+            if problem:  # incompatible/foreign gpkg -> clear message, no cryptic crash
+                self.iface.messageBar().pushCritical("Drainworks", problem)
+                return
             try:
                 self._load_and_show(input_path)
             except Exception as exc:  # surface to the user, don't crash QGIS
@@ -109,11 +114,13 @@ class DrainworksPlugin:
 
         from drainworks_plugin.pipeline.tasks import ImportTask
 
-        from drainworks_plugin.ui.busy import start_busy
+        from drainworks_plugin.ui.busy import set_busy_text, start_busy
 
         self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
                                        on_done=self._import_done)
         self._busy = start_busy(self.iface, "Importeren…")
+        # Show the current phase ("RIBX inlezen…", "GeoPackage wegschrijven…") on the bar.
+        self._import_task.phase.connect(lambda text: set_busy_text(self._busy, text))
         QgsApplication.taskManager().addTask(self._import_task)
 
     def _import_done(self, task):
@@ -153,10 +160,9 @@ class DrainworksPlugin:
         """Zoom the canvas to the combined extent of ``layers`` (CRS-aware)."""
         from qgis.core import QgsCoordinateTransform, QgsProject, QgsRectangle
 
-        extent = QgsRectangle()
-        extent.setMinimal()
         project = QgsProject.instance()
         dst_crs = project.crs()
+        extent = None
         for layer in layers:
             if layer is None or layer.featureCount() == 0:
                 continue
@@ -164,8 +170,11 @@ class DrainworksPlugin:
             if layer.crs() != dst_crs:
                 xform = QgsCoordinateTransform(layer.crs(), dst_crs, project)
                 layer_extent = xform.transformBoundingBox(layer_extent)
-            extent.combineExtentWith(layer_extent)
-        if extent.isNull() or extent.isEmpty():
+            if extent is None:
+                extent = QgsRectangle(layer_extent)
+            else:
+                extent.combineExtentWith(layer_extent)
+        if extent is None or extent.isNull() or extent.isEmpty():
             return
         extent.scale(1.1)  # small margin around the network
         canvas = self.iface.mapCanvas()

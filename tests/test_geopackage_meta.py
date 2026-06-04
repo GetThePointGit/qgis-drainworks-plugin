@@ -1,4 +1,5 @@
 from drainworks_plugin.io.geopackage_store import (
+    SCHEMA_VERSION,
     base_fingerprint,
     berging_fingerprint,
     read_meta,
@@ -36,7 +37,9 @@ def test_berging_fingerprint_depends_on_sinks():
 
 def test_meta_roundtrip_and_merge(tmp_gpkg):
     _base(tmp_gpkg)
-    assert read_meta(tmp_gpkg) == {}
+    # write_base stamps the schema version; everything else merges on top of it.
+    assert read_meta(tmp_gpkg) == {"schema_version": SCHEMA_VERSION}
     write_meta(tmp_gpkg, {"a": 1, "b": {"x": 2}})
     write_meta(tmp_gpkg, {"b": {"x": 3}, "c": [1, 2]})   # merge/replace
-    assert read_meta(tmp_gpkg) == {"a": 1, "b": {"x": 3}, "c": [1, 2]}
+    assert read_meta(tmp_gpkg) == {"schema_version": SCHEMA_VERSION,
+                                   "a": 1, "b": {"x": 3}, "c": [1, 2]}

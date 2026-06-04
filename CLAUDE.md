@@ -60,6 +60,10 @@ user to verify behaviour.
   (`base_fingerprint`) + used settings + summaries. On load the dock compares the
   fingerprint to decide "actueel" vs "verouderd" (`PipelineState.restore`). If you change
   what enrich consumes, keep `base_fingerprint` consistent or staleness detection breaks.
+- `write_base` stamps `dw_meta.schema_version` (= `geopackage_store.SCHEMA_VERSION`). On
+  open, `check_base_schema` validates the layers/fields/version and returns a Dutch error
+  for foreign/old GeoPackages (so reads don't crash with OGR's "Illegal field requested in
+  GetField()"). Bump `SCHEMA_VERSION` when the base layers change incompatibly.
 - The network graph is immutable after `set_data`; `SewerNetwork.shortest_path` is memoised.
 - Settings (enrich/berging/side-view) persist via `QgsSettings` (JSON) and, per-gpkg, in
   `dw_meta`.

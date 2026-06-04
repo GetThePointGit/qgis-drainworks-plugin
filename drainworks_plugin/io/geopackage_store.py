@@ -12,6 +12,18 @@ import rgs_ribx
 
 RD_EPSG = 28992
 
+# Bumped whenever the base layers' schema changes incompatibly. Written into the
+# GeoPackage's ``dw_meta`` table by :func:`write_base` so :func:`check_base_schema`
+# can recognise (and refuse) GeoPackages from other tools or older plug-in versions.
+SCHEMA_VERSION = 1
+
+# Minimal set of fields a Drainworks base GeoPackage must expose per layer; used to
+# tell a real Drainworks gpkg apart from a foreign/old one before reading it.
+_REQUIRED_FIELDS = {
+    "pipes": ("code", "manhole1", "manhole2", "bob1", "bob2"),
+    "manholes": ("code", "ground_level", "is_sink"),
+}
+
 
 def _srs() -> "osr.SpatialReference":
     """Return the RD New (EPSG:28992) spatial reference for the GeoPackage layers."""
@@ -316,6 +328,8 @@ def write_base(path, manholes, pipes, raw_measurements) -> Path:
     _write_measurements_raw(ds, srs, raw_measurements)
     ds.CommitTransaction()
     ds = None
+    # Stamp the schema version so the GeoPackage can be recognised on re-open.
+    write_meta(path, {"schema_version": SCHEMA_VERSION})
     return path
 
 
@@ -627,3 +641,53 @@ def write_meta(path, values) -> None:
         feat = None
     ds.CommitTransaction()
     ds = None
+
+
+def read_schema_version(path):
+    """Return the GeoPackage's stored ``schema_version`` (int), or None if absent."""
+    return read_meta(path).get("schema_version")
+
+
+def check_base_schema(path) -> "str | None":
+    """Validate that ``path`` is a Drainworks base GeoPackage this plug-in can open.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Path to the GeoPackage to open.
+
+    Returns
+    -------
+    str or None
+        ``None`` when the GeoPackage has the expected Drainworks layers/fields and a
+        compatible schema version. Otherwise a human-readable Dutch reason why it
+        cannot be opened (suitable for a message bar) — typically because it was made
+        with another tool or an older/newer plug-in version.
+    """
+    ds = ogr.Open(str(path))
+    if ds is None:
+        return "Het bestand kon niet als GeoPackage geopend worden."
+    missing_layers = [name for name in _REQUIRED_FIELDS if ds.GetLayerByName(name) is None]
+    if missing_layers:
+        return (
+            f"Deze GeoPackage mist de Drainworks-laag/-lagen ({', '.join(missing_layers)}). "
+            "Hij is waarschijnlijk met een ander programma of een oudere versie gemaakt. "
+            "Maak hem opnieuw aan door het RIBX/SUFRIB-bestand te importeren.")
+    for layer_name, required in _REQUIRED_FIELDS.items():
+        defn = ds.GetLayerByName(layer_name).GetLayerDefn()
+        present = {defn.GetFieldDefn(i).GetName() for i in range(defn.GetFieldCount())}
+        missing = [f for f in required if f not in present]
+        if missing:
+            version = read_schema_version(path)
+            vtext = (f"schemaversie {version}" if version is not None
+                     else "geen Drainworks-schemaversie")
+            return (
+                f"De laag '{layer_name}' mist verwachte velden ({', '.join(missing)}). "
+                f"De GeoPackage heeft {vtext} en is niet compatibel met deze plug-inversie "
+                f"(verwacht schemaversie {SCHEMA_VERSION}). Maak hem opnieuw aan via Importeren.")
+    version = read_schema_version(path)
+    if version is not None and version != SCHEMA_VERSION:
+        return (
+            f"Deze GeoPackage heeft schemaversie {version}, maar deze plug-in verwacht "
+            f"versie {SCHEMA_VERSION}. Maak hem opnieuw aan via Importeren.")
+    return None

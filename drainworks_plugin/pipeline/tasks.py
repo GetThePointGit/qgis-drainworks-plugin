@@ -6,6 +6,7 @@ Each task's ``run()`` does the heavy work (callable directly in tests) and store
 """
 
 from qgis.core import QgsTask
+from qgis.PyQt.QtCore import pyqtSignal
 
 from drainworks_plugin.io.import_controller import import_to_base
 from drainworks_plugin.pipeline.berging import compute_berging
@@ -47,7 +48,14 @@ class _StepTask(QgsTask):
 
 
 class ImportTask(_StepTask):
-    """Step 1: parse + write_base."""
+    """Step 1: parse + write_base.
+
+    Emits :attr:`phase` (a ``str``) at each coarse import phase so the GUI can
+    show step feedback; the signal is emitted from the worker thread and delivered
+    to main-thread slots via Qt's queued connection.
+    """
+
+    phase = pyqtSignal(str)
 
     def __init__(self, input_path, measurement_path, gpkg_path, on_done=None):
         super().__init__("Drainworks: importeren", on_done)
@@ -55,7 +63,7 @@ class ImportTask(_StepTask):
 
     def _work(self):
         """Parse the input and write the base layers to the GeoPackage."""
-        return import_to_base(*self._args)
+        return import_to_base(*self._args, on_phase=self.phase.emit)
 
 
 class EnrichTask(_StepTask):
