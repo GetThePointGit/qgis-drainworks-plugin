@@ -27,14 +27,25 @@ pipes render dark grey under the coloured segments.
 The Opmaak (StyleDialog) gains a **Segmenten** section with a "Kleur op" choice:
 - **Vullingsgraad** (`flooded_pct`) — the current graduated 0–25/25–50/50–75/75–100%
   look (default), via the existing `style_segments`;
-- **Waterhoogte** (`water_level`) — a graduated renderer over the segment water level.
+- **Waterhoogte** (`water_level`) — a graduated renderer over the segment water level;
+- **Max. waterdiepte** (`water_depth_max`) — a graduated renderer over the maximum
+  water depth in the segment.
 
-New `styling/views.py`: `SEGMENT_COLOR_FLOODED` / `SEGMENT_COLOR_WATER` +
-`apply_segment_style(layer, color_mode)`. The dock's `style_modes` gains
-`"segment_color"` (default flooded); `_on_style` applies it to the loaded "Segmenten"
-layer (found via `QgsProject.mapLayersByName("Segmenten")`, so it works after each
-enrich/berging reload) and refreshes its legend. The segments layer keeps its default
-graduated `flooded_pct` styling on load (unchanged).
+New `styling/views.py`: `SEGMENT_COLOR_FLOODED` / `SEGMENT_COLOR_WATER` /
+`SEGMENT_COLOR_DEPTH` + `apply_segment_style(layer, color_mode)`. The dock's
+`style_modes` gains `"segment_color"` (default flooded); `_on_style` applies it to the
+loaded "Segmenten" layer (found via `QgsProject.mapLayersByName("Segmenten")`, so it
+works after each enrich/berging reload) and refreshes its legend. The segments layer
+keeps its default graduated `flooded_pct` styling on load (unchanged).
+
+### New segment field: `water_depth_max`
+
+Max water depth isn't stored yet. Add **`water_depth_max`** to the segment berging fields
+(`geopackage_store.SEGMENT_BERGING_FIELDS`, so `write_segments`/`update_segments_berging`/
+`read_segments` carry it automatically). The berging aggregation (`pipeline/berging.py`
+`_aggregate`) computes it as the **maximum over the segment's flood-filled points of
+`water_level − bob`** (≥ 0; 0 where dry). Both resolutions fill it (accurate from the
+detailed points, fast from the segment endpoints).
 
 ---
 
