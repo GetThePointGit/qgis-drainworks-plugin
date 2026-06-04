@@ -42,7 +42,10 @@ def _endpoint_profile(pipe, seg_rows):
 def _aggregate(points):
     """Length-weighted berging aggregates over consecutive flood-filled points."""
     pts = sorted(points, key=lambda p: p.dist)
-    total = flooded_len = vol = pct_w = water_w = water_len = pct_max = 0.0
+    total = flooded_len = vol = pct_w = water_w = water_len = pct_max = depth_max = 0.0
+    for p in pts:
+        if p.water_level is not None:
+            depth_max = max(depth_max, p.water_level - p.bob)
     for a, b in zip(pts, pts[1:]):
         length = b.dist - a.dist
         if length <= 0:
@@ -65,6 +68,7 @@ def _aggregate(points):
         "lost_volume": vol,
         "flooded_length": flooded_len,
         "water_level": (water_w / water_len) if water_len else None,
+        "water_depth_max": depth_max,
     }
 
 
