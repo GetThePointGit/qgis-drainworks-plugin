@@ -384,12 +384,15 @@ class DrainworksDock(QDockWidget):
     def _restore_pipeline_state(self):
         """Set step state + summaries + settings from the gpkg's dw_meta + fingerprint."""
         from drainworks_plugin.io.geopackage_store import (
-            base_fingerprint, berging_fingerprint, read_meta, read_segments)
+            base_fingerprint, berging_fingerprint, read_meta)
 
         meta = read_meta(self.gpkg_path)
-        fingerprint = base_fingerprint(self.gpkg_path)
-        enriched = bool(read_segments(self.gpkg_path))
-        enrich_fresh = enriched and meta.get("enrich_fingerprint") == fingerprint
+        enriched = bool(self._segments_by_pipe)   # already read in set_data
+        # The fingerprint reads all measurements, so only compute it when there is a
+        # stored enrich fingerprint to compare against (i.e. the gpkg was enriched).
+        enrich_fresh = (
+            enriched and bool(meta.get("enrich_fingerprint"))
+            and meta["enrich_fingerprint"] == base_fingerprint(self.gpkg_path))
         berging_ran = "berging_total" in meta
         berging_fresh = (
             berging_ran and enrich_fresh
@@ -888,7 +891,10 @@ class DrainworksDock(QDockWidget):
         # exist only in the live preview fall back to the straight BOB line (no water).
         committed_route = None
         committed_codes = set()
-        if len(self.waypoints) >= 2:
+        if waypoints == self.waypoints:
+            committed_route = route                 # common case: not a preview
+            committed_codes = set(route.pipe_codes)
+        elif len(self.waypoints) >= 2:
             try:
                 committed_route = self.network.route(self.waypoints)
                 committed_codes = set(committed_route.pipe_codes)

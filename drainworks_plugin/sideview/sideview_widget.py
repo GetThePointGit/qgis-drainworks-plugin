@@ -97,14 +97,18 @@ class SideViewWidget(QWidget):
         if profile.ideal:
             self.plot.plot(
                 [d for d, _ in profile.ideal], [b for _, b in profile.ideal],
-                pen=self._pen("ideal", dashed=True), name="BOB leiding (recht)")
+                pen=self._pen("ideal", dashed=True), name="BOB leiding (recht)",
+                skipFiniteCheck=True)
 
-        # Crown (top of pipe) and measured invert with a marker per point.
-        self.plot.plot(dists, obbs, pen=self._pen("crown"), name="Bovenkant buis")
+        # Crown (top of pipe) and measured invert. Per-point markers are the pyqtgraph
+        # bottleneck on long routes, so only draw them for short profiles.
+        self.plot.plot(dists, obbs, pen=self._pen("crown"), name="Bovenkant buis",
+                       skipFiniteCheck=True)
         bob_color = self._style("bob").get("color", "#333333")
-        self.plot.plot(
-            dists, bobs, pen=self._pen("bob"), name="BOB gemeten",
-            symbol="o", symbolSize=4, symbolBrush=bob_color, symbolPen=None)
+        marker_kw = (dict(symbol="o", symbolSize=4, symbolBrush=bob_color, symbolPen=None)
+                     if len(dists) <= 500 else {})
+        self.plot.plot(dists, bobs, pen=self._pen("bob"), name="BOB gemeten",
+                       skipFiniteCheck=True, **marker_kw)
 
         # Water-level fill (verloren berging) where water_level is set.
         water = [v.water_level if v.water_level is not None else v.bob for v in profile.vertices]
