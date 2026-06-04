@@ -195,3 +195,8 @@ drainworks_plugin/external/pyqtgraph/examples/
 # rgs_ribx in external/ is a dev symlink to the sibling checkout (live edits).
 # For distribution, run scripts/vendor_rgs_ribx.sh --copy and force-add it.
 drainworks_plugin/external/rgs_ribx
+# Large user-provided SUFRIB validation data (not committed)
+example/voorbeeld_rib.rib
+example/voorbeeld_rib.rmb
+example/voorbeeld_rib_output.zip
+example/voorbeeld_rib_output/
