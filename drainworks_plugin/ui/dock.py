@@ -206,8 +206,10 @@ class DrainworksDock(QDockWidget):
             "Ongedaan", "undo.svg", self._on_undo, "Maak de laatste wijziging ongedaan")
         self.btn_traj_redo = self._text_tool_button(
             "Opnieuw", "redo.svg", self._on_redo, "Voer de ongedane wijziging opnieuw uit")
+        self.btn_traj_done = self._text_tool_button(
+            "Klaar", "check.svg", self._on_traj_done, "Sluit de trajectkeuze af")
         for b in (self.btn_traj_downstream, self.btn_traj_delmode, self.btn_traj_clear,
-                  self.btn_traj_undo, self.btn_traj_redo):
+                  self.btn_traj_undo, self.btn_traj_redo, self.btn_traj_done):
             traj_layout.addWidget(b)
         traj_layout.addStretch()
         self.volume_label = QLabel("")
@@ -551,6 +553,11 @@ class DrainworksDock(QDockWidget):
             self.waypoints.append(code)
         self.active_code = self.waypoints[-1]
         self._commit_waypoints()
+
+    def _on_traj_done(self):
+        """Finish trajectory editing: turn the Traject tool off."""
+        self.btn_traj.setChecked(False)
+        self._on_traj_toggled(False)
 
     def _on_traj_toggled(self, checked):
         self.traj_bar.setVisible(checked)
