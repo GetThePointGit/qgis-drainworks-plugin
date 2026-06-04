@@ -76,6 +76,7 @@ class DrainworksDock(QDockWidget):
         }
 
         self._build_ui()
+        self.side_view.apply_settings(self._load_sideview_settings())
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -190,6 +191,11 @@ class DrainworksDock(QDockWidget):
         self.volume_label = QLabel("")
         self.volume_label.setStyleSheet("color: #2c7fb8; font-weight: bold;")
         header.addWidget(self.volume_label)
+        self.btn_sv_settings = QToolButton()
+        self.btn_sv_settings.setText("⚙")
+        self.btn_sv_settings.setToolTip("Langsprofiel-instellingen")
+        self.btn_sv_settings.clicked.connect(self._on_sideview_settings)
+        header.addWidget(self.btn_sv_settings)
         right_layout.addLayout(header)
         self.side_view = SideViewWidget()
         self.side_view.hovered.connect(self._on_graph_hover)
@@ -203,6 +209,32 @@ class DrainworksDock(QDockWidget):
 
         self.setWidget(splitter)
         self._set_data_enabled(False)
+
+    SV_SETTINGS_KEY = "drainworks/sideview"
+
+    def _load_sideview_settings(self):
+        import json
+        from qgis.core import QgsSettings
+        from drainworks_plugin.sideview.settings import SideViewSettings
+        raw = QgsSettings().value(self.SV_SETTINGS_KEY, "", type=str)
+        try:
+            data = json.loads(raw) if raw else {}
+        except ValueError:
+            data = {}
+        return SideViewSettings.from_dict(data)
+
+    def _on_sideview_settings(self):
+        import json
+        from qgis.core import QgsSettings
+        from qgis.PyQt.QtWidgets import QDialog
+        from drainworks_plugin.ui.sideview_settings_dialog import SideViewSettingsDialog
+        current = self._load_sideview_settings()
+        dialog = SideViewSettingsDialog(current, self.iface.mainWindow())
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        new = dialog.values()
+        QgsSettings().setValue(self.SV_SETTINGS_KEY, json.dumps(new.to_dict()))
+        self.side_view.apply_settings(new)
 
     def _tool_button(self, text, icon_name, slot, checkable=False):
         button = QToolButton()

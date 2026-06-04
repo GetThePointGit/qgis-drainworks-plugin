@@ -81,8 +81,12 @@ class SideViewWidget(QWidget):
         # Crown (top of pipe) and measured invert with a marker per point.
         self.plot.plot(dists, obbs, pen=pg.mkPen("#888888", width=1), name="Bovenkant buis")
         self.plot.plot(
-            dists, bobs, pen=pg.mkPen("#333333", width=2), name="BOB gemeten",
-            symbol="o", symbolSize=4, symbolBrush="#333333", symbolPen=None,
+            dists, bobs,
+            pen=pg.mkPen(getattr(self, "_line_color", "#333333"),
+                         width=getattr(self, "_line_width", 2)),
+            name="BOB gemeten",
+            symbol="o", symbolSize=4,
+            symbolBrush=getattr(self, "_line_color", "#333333"), symbolPen=None,
         )
 
         # Water-level fill (verloren berging) where water_level is set.
@@ -120,6 +124,23 @@ class SideViewWidget(QWidget):
         self._cursor.hide()
         self.plot.addItem(self._cursor)
         self.plot.autoRange()
+
+    def apply_settings(self, settings):
+        """Apply SideViewSettings (re-render the current profile if any)."""
+        self._show_putcodes = settings.show_putcodes
+        self._line_color = settings.line_color
+        self._line_width = settings.line_width
+        legend = self.plot.plotItem.legend
+        if legend is not None:
+            anchor = (0, 0) if settings.legend_position == "top-left" else (1, 0)
+            offset = (10, 10) if settings.legend_position == "top-left" else (-10, 10)
+            legend.anchor(anchor, anchor, offset)
+            if settings.legend_white_bg:
+                legend.setBrush(pg.mkBrush(255, 255, 255, 220))
+            else:
+                legend.setBrush(None)
+        if getattr(self, "_last_profile", None) is not None:
+            self.show_profile(self._last_profile)
 
     def show_water(self, water_points):
         """Draw the verloren-berging water fill from [(dist, level)] points."""
