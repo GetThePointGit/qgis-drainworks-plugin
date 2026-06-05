@@ -577,10 +577,11 @@ class DrainworksDock(QDockWidget):
         """Submit a QgsTask to the task manager, disabling the step buttons."""
         from qgis.core import QgsApplication
 
-        from drainworks_plugin.ui.busy import start_busy
+        from drainworks_plugin.ui.busy import bind_progress, start_progress
 
         self.active_task = task
-        self._busy = start_busy(self.iface, task.description() + "…")
+        self._busy = start_progress(self.iface, task.description() + "…")
+        bind_progress(task, self._busy)  # live %/label per stage
         for btn in (self.btn_enrich, self.btn_loss):
             btn.setEnabled(False)
         QgsApplication.taskManager().addTask(task)

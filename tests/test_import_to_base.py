@@ -22,20 +22,24 @@ def test_import_to_base_no_heights_yet(fixtures_dir, tmp_gpkg):
     assert "profile" not in names and "segments" not in names
 
 
-def test_import_to_base_reports_phases(fixtures_dir, tmp_gpkg):
-    phases = []
+def test_import_to_base_reports_progress(fixtures_dir, tmp_gpkg):
+    marks = []
     import_to_base(str(fixtures_dir / "inclined.ribx"), None, str(tmp_gpkg),
-                   on_phase=phases.append)
-    # An "inlezen" (read) phase before a "wegschrijven" (write) phase, then done.
-    assert any("inlezen" in p.lower() for p in phases)
-    assert any("wegschrijven" in p.lower() for p in phases)
-    assert phases[-1] == "Klaar"
+                   on_progress=lambda frac, label: marks.append((frac, label)))
+    fracs = [f for f, _ in marks]
+    labels = [lab for _, lab in marks]
+    # Monotonic non-decreasing fractions in [0, 1], ending at 1.0 ("Klaar").
+    assert fracs == sorted(fracs)
+    assert all(0.0 <= f <= 1.0 for f in fracs)
+    assert fracs[-1] == 1.0 and marks[-1][1] == "Klaar"
+    assert any("inlezen" in lab.lower() for lab in labels)
+    assert any("wegschrijven" in lab.lower() for lab in labels)
 
 
-def test_import_to_base_phase_callback_errors_are_ignored(fixtures_dir, tmp_gpkg):
-    def boom(_text):
+def test_import_to_base_progress_callback_errors_are_ignored(fixtures_dir, tmp_gpkg):
+    def boom(_frac, _label):
         raise RuntimeError("callback should not break the import")
 
     out = import_to_base(str(fixtures_dir / "inclined.ribx"), None, str(tmp_gpkg),
-                         on_phase=boom)
+                         on_progress=boom)
     assert str(out) == str(tmp_gpkg)

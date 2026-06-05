@@ -6,7 +6,7 @@ Embedded in the Drainworks dock.
 """
 
 import pyqtgraph as pg
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import QEvent, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QVBoxLayout, QWidget
 
 
@@ -36,6 +36,16 @@ class SideViewWidget(QWidget):
         self._cursor = pg.InfiniteLine(angle=90, pen=pg.mkPen("#c54141", width=1))
         self._cursor.hide()
         self.plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        # Moving off the plot fast (e.g. onto the map) stops sending move events, so
+        # the last position would linger. Catch the widget Leave to clear it too.
+        self.plot.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Emit ``hovered(-1)`` when the cursor leaves the plot (clears the map ring)."""
+        if obj is self.plot and event.type() == QEvent.Leave:
+            self._cursor.hide()
+            self.hovered.emit(-1.0)
+        return super().eventFilter(obj, event)
 
     def _on_mouse_moved(self, pos):
         """Track the cursor, move the vertical line, and emit ``hovered`` (m)."""

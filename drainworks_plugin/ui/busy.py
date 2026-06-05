@@ -1,12 +1,9 @@
-"""messageBar progress indicators.
+"""messageBar progress indicator.
 
-Two flavours, both returning a :class:`BusyIndicator` handle:
-
-- :func:`start_busy` — an indeterminate "busy" bar for steps without measurable
-  progress (enrich / lost storage).
-- :func:`start_progress` — a determinate percentage bar that visibly fills in
-  steps, advanced by the caller via :meth:`BusyIndicator.set_progress` (import,
-  driven by the import phases).
+:func:`start_progress` shows a determinate percentage bar (returning a
+:class:`BusyIndicator` handle) that visibly fills in steps; :func:`bind_progress`
+drives it from a task's ``progress(percent, label)`` signal. Used by all three
+pipeline steps (import / enrich / lost storage).
 """
 
 from qgis.core import Qgis
@@ -64,14 +61,6 @@ def _push(iface, text, bar) -> BusyIndicator:
     return BusyIndicator(iface, item, bar)
 
 
-def start_busy(iface, text) -> BusyIndicator:
-    """Show an indeterminate 'busy' indicator (for steps without measurable progress)."""
-    bar = QProgressBar()
-    bar.setRange(0, 0)            # indeterminate / animated
-    bar.setTextVisible(False)
-    return _push(iface, text, bar)
-
-
 def start_progress(iface, text) -> BusyIndicator:
     """Show a determinate percentage bar at 0%; advance it via ``set_progress``."""
     bar = QProgressBar()
@@ -79,3 +68,12 @@ def start_progress(iface, text) -> BusyIndicator:
     bar.setValue(0)
     bar.setTextVisible(True)      # show the % so the steps are visible
     return _push(iface, text, bar)
+
+
+def bind_progress(task, indicator: BusyIndicator) -> None:
+    """Drive ``indicator`` from a task's ``progress(percent, label)`` signal."""
+    def _on(pct, label):
+        indicator.set_progress(pct)
+        if label:
+            indicator.set_text(label)
+    task.progress.connect(_on)

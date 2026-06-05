@@ -72,13 +72,27 @@ def _aggregate(points):
     }
 
 
-def compute_berging(gpkg_path, resolution="accurate") -> int:
-    """Flood-fill + fill segment berging fields. Returns the segment count."""
+def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
+    """Flood-fill + fill segment berging fields. Returns the segment count.
+
+    ``on_progress(fraction, label)`` (0..1), if given, is called at each stage
+    (read / build network / flood-fill / write) so the caller can show a stepped
+    progress bar. Errors in the callback are ignored.
+    """
+    def _report(frac, label):
+        if on_progress is not None:
+            try:
+                on_progress(frac, label)
+            except Exception:
+                pass
+
+    _report(0.05, "Gegevens lezen…")
     manholes = {m.code: m for m in read_manholes(gpkg_path)}
     pipes = {p.code: p for p in read_pipes(gpkg_path)}
     segments = read_segments(gpkg_path)
     profile_pts = read_profile(gpkg_path)
 
+    _report(0.30, "Netwerk opbouwen…")
     segs_by_pipe = {}
     for seg in segments:
         segs_by_pipe.setdefault(seg["pipe_code"], []).append(seg)
@@ -89,11 +103,13 @@ def compute_berging(gpkg_path, resolution="accurate") -> int:
             profiles[code] = profile_pts[code]
         elif segs_by_pipe.get(code):
             profiles[code] = _endpoint_profile(pipe, segs_by_pipe[code])
+    _report(0.45, "Waterstanden berekenen…")
     rgs_ribx.compute_lost_capacity(manholes, pipes, profiles)
 
     # Accurate: persist the per-point water back to the profile layer so the
     # side-view can show a water level per measurement point (fast does not).
     if resolution == "accurate" and profile_pts:
+        _report(0.70, "Profiel wegschrijven…")
         from drainworks_plugin.io.geopackage_store import point_along_wkt, write_profile
         rows = []
         for code in profile_pts:
@@ -106,6 +122,7 @@ def compute_berging(gpkg_path, resolution="accurate") -> int:
                     "geometry_wkt": point_along_wkt(wkt, mp.dist) if wkt else None})
         write_profile(gpkg_path, rows)
 
+    _report(0.88, "Segmenten wegschrijven…")
     updates = {}
     for seg in segments:
         pts = profiles.get(seg["pipe_code"], [])
@@ -125,4 +142,5 @@ def compute_berging(gpkg_path, resolution="accurate") -> int:
         "berging_total": total_lost_volume(gpkg_path),
         "sinks": sinks,
     })
+    _report(1.0, "Klaar")
     return len(segments)

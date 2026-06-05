@@ -14,13 +14,26 @@ from drainworks_plugin.pipeline.enrich import enrich
 
 
 class _StepTask(QgsTask):
-    """Base: run a callable, capture result/error, fire on_done on the main thread."""
+    """Base: run a callable, capture result/error, fire on_done on the main thread.
+
+    Emits :attr:`progress` ``(percent, label)`` as the step proceeds (and feeds the
+    same value to ``QgsTask.setProgress``); the signal is emitted from the worker
+    thread and delivered to main-thread slots via Qt's queued connection.
+    """
+
+    progress = pyqtSignal(float, str)
 
     def __init__(self, description, on_done=None):
         super().__init__(description, QgsTask.CanCancel)
         self.on_done = on_done
         self.result = None
         self.error = None
+
+    def _report(self, frac, label=""):
+        """Progress callback for the pipeline functions: fan out to the bar + task."""
+        pct = max(0.0, min(100.0, float(frac) * 100.0))
+        self.setProgress(pct)
+        self.progress.emit(pct, label or "")
 
     def _work(self):
         """Do the step's heavy work and return its result (override in subclasses)."""
@@ -48,14 +61,7 @@ class _StepTask(QgsTask):
 
 
 class ImportTask(_StepTask):
-    """Step 1: parse + write_base.
-
-    Emits :attr:`phase` (a ``str``) at each coarse import phase so the GUI can
-    show step feedback; the signal is emitted from the worker thread and delivered
-    to main-thread slots via Qt's queued connection.
-    """
-
-    phase = pyqtSignal(str)
+    """Step 1: parse + write_base."""
 
     def __init__(self, input_path, measurement_path, gpkg_path, on_done=None):
         super().__init__("Drainworks: importeren", on_done)
@@ -63,7 +69,7 @@ class ImportTask(_StepTask):
 
     def _work(self):
         """Parse the input and write the base layers to the GeoPackage."""
-        return import_to_base(*self._args, on_phase=self.phase.emit)
+        return import_to_base(*self._args, on_progress=self._report)
 
 
 class EnrichTask(_StepTask):
@@ -81,7 +87,7 @@ class EnrichTask(_StepTask):
 
     def _work(self):
         """Validate, integrate and build segments for the base data."""
-        return enrich(self.gpkg_path, **self._kwargs)
+        return enrich(self.gpkg_path, on_progress=self._report, **self._kwargs)
 
 
 class BergingTask(_StepTask):
@@ -94,4 +100,5 @@ class BergingTask(_StepTask):
 
     def _work(self):
         """Run the flood-fill and write per-segment lost-storage results."""
-        return compute_berging(self.gpkg_path, resolution=self.resolution)
+        return compute_berging(self.gpkg_path, resolution=self.resolution,
+                               on_progress=self._report)
