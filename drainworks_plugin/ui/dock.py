@@ -487,8 +487,8 @@ class DrainworksDock(QDockWidget):
 
     def _enrich_done(self, task):
         """Enrich task callback: clear busy, report errors, refresh summary and layers."""
-        from drainworks_plugin.ui.busy import stop_busy
-        stop_busy(self.iface, self._busy)
+        if self._busy is not None:
+            self._busy.stop()
         self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
@@ -533,8 +533,8 @@ class DrainworksDock(QDockWidget):
 
     def _loss_done(self, task):
         """Berging task callback: clear busy, report errors, show total and refresh."""
-        from drainworks_plugin.ui.busy import stop_busy
-        stop_busy(self.iface, self._busy)
+        if self._busy is not None:
+            self._busy.stop()
         self._busy = None
         if task.error is not None:
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")

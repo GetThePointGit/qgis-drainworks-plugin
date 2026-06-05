@@ -1,41 +1,81 @@
-"""A messageBar busy indicator with an animated (indeterminate) progress bar."""
+"""messageBar progress indicators.
+
+Two flavours, both returning a :class:`BusyIndicator` handle:
+
+- :func:`start_busy` — an indeterminate "busy" bar for steps without measurable
+  progress (enrich / lost storage).
+- :func:`start_progress` — a determinate percentage bar that visibly fills in
+  steps, advanced by the caller via :meth:`BusyIndicator.set_progress` (import,
+  driven by the import phases).
+"""
 
 from qgis.core import Qgis
-from qgis.PyQt.QtWidgets import QProgressBar, QStyleFactory
+from qgis.PyQt.QtWidgets import QProgressBar
 
 
-def start_busy(iface, text):
-    """Show a messageBar item with an animated (indeterminate) progress bar; returns it.
+class BusyIndicator:
+    """Handle to a messageBar progress item: update its text/percentage, then stop.
 
-    The bar is forced to the Fusion style: the native macOS style renders a
-    ``range(0, 0)`` bar as a static *full* bar (it looks stuck at 100%), whereas
-    Fusion animates it so it reads as "working".
+    Parameters
+    ----------
+    iface : qgis.gui.QgisInterface
+        The QGIS interface owning the message bar.
+    item : qgis.gui.QgsMessageBarItem
+        The pushed message-bar item (used to update text and to remove it).
+    bar : qgis.PyQt.QtWidgets.QProgressBar
+        The embedded progress bar (determinate or indeterminate).
     """
+
+    def __init__(self, iface, item, bar):
+        self._iface = iface
+        self._item = item
+        self._bar = bar
+
+    def set_text(self, text):
+        """Update the message text (best-effort; no-op if the item is gone)."""
+        try:
+            self._item.setText(text)
+        except (AttributeError, RuntimeError):
+            pass
+
+    def set_progress(self, pct):
+        """Set the bar to ``pct`` (0–100). No visible effect on an indeterminate bar."""
+        try:
+            self._bar.setValue(int(pct))
+        except (RuntimeError, ValueError, TypeError):
+            pass
+
+    def stop(self):
+        """Remove the item from the message bar (idempotent)."""
+        if self._item is not None:
+            try:
+                self._iface.messageBar().popWidget(self._item)
+            except RuntimeError:
+                pass
+            self._item = None
+
+
+def _push(iface, text, bar) -> BusyIndicator:
+    """Embed ``bar`` in a Drainworks message and push it; return its handle."""
     msg = iface.messageBar().createMessage("Drainworks", text)
+    bar.setMaximumWidth(200)
+    msg.layout().addWidget(bar)
+    item = iface.messageBar().pushWidget(msg, Qgis.Info)
+    return BusyIndicator(iface, item, bar)
+
+
+def start_busy(iface, text) -> BusyIndicator:
+    """Show an indeterminate 'busy' indicator (for steps without measurable progress)."""
     bar = QProgressBar()
     bar.setRange(0, 0)            # indeterminate / animated
-    bar.setMaximumWidth(200)
     bar.setTextVisible(False)
-    fusion = QStyleFactory.create("Fusion")
-    if fusion is not None:
-        # setStyle does not take ownership; keep a reference so it outlives the bar.
-        bar._fusion_style = fusion
-        bar.setStyle(fusion)
-    msg.layout().addWidget(bar)
-    return iface.messageBar().pushWidget(msg, Qgis.Info)
+    return _push(iface, text, bar)
 
 
-def set_busy_text(item, text):
-    """Update the text of a busy item (best-effort; no-op if unsupported/None)."""
-    if item is None:
-        return
-    try:
-        item.setText(text)
-    except (AttributeError, RuntimeError):
-        pass
-
-
-def stop_busy(iface, item):
-    """Remove a busy item (no-op if None)."""
-    if item is not None:
-        iface.messageBar().popWidget(item)
+def start_progress(iface, text) -> BusyIndicator:
+    """Show a determinate percentage bar at 0%; advance it via ``set_progress``."""
+    bar = QProgressBar()
+    bar.setRange(0, 100)
+    bar.setValue(0)
+    bar.setTextVisible(True)      # show the % so the steps are visible
+    return _push(iface, text, bar)

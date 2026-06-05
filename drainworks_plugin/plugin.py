@@ -114,19 +114,37 @@ class DrainworksPlugin:
 
         from drainworks_plugin.pipeline.tasks import ImportTask
 
-        from drainworks_plugin.ui.busy import set_busy_text, start_busy
+        from drainworks_plugin.ui.busy import start_progress
 
         self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
                                        on_done=self._import_done)
-        self._busy = start_busy(self.iface, "Importeren…")
-        # Show the current phase ("RIBX inlezen…", "GeoPackage wegschrijven…") on the bar.
-        self._import_task.phase.connect(lambda text: set_busy_text(self._busy, text))
+        self._busy = start_progress(self.iface, "Importeren…")
+        # Advance the percentage bar + its label per coarse import phase. The parse is
+        # one opaque call, so the bar sits at PARSE_PCT during it, then steps to write/done.
+        self._import_task.phase.connect(self._on_import_phase)
         QgsApplication.taskManager().addTask(self._import_task)
+
+    # Phase text -> (label, percentage) for the import progress bar.
+    _IMPORT_PHASES = {
+        "RIBX inlezen…": ("RIBX inlezen…", 10),
+        "SUFRIB inlezen…": ("SUFRIB inlezen…", 10),
+        "GeoPackage wegschrijven…": ("GeoPackage wegschrijven…", 70),
+        "Klaar": ("Klaar", 100),
+    }
+
+    def _on_import_phase(self, phase):
+        """Update the import progress bar's label and percentage for ``phase``."""
+        if self._busy is None:
+            return
+        label, pct = self._IMPORT_PHASES.get(phase, (phase, None))
+        self._busy.set_text(label)
+        if pct is not None:
+            self._busy.set_progress(pct)
 
     def _import_done(self, task):
         """Main-thread callback after the import task finishes."""
-        from drainworks_plugin.ui.busy import stop_busy
-        stop_busy(self.iface, self._busy)
+        if self._busy is not None:
+            self._busy.stop()
         self._busy = None
         self._import_task = None
         if task.error is not None:
