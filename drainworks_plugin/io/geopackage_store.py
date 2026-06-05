@@ -290,7 +290,13 @@ def read_manhole_points(path):
 
 
 def _write_measurements_raw(ds, srs, raw_measurements) -> None:
-    """Write the un-integrated measurements as a geometry-less attribute table."""
+    """Write the un-integrated measurements as a geometry-less attribute table.
+
+    There can be millions of measurement points, so this sets fields by their
+    integer index (stable in creation order) instead of by name. OGR resolves a
+    field name to an index on every ``SetField(name, ...)`` call; by index that
+    lookup is skipped, which dominates the write time for large inspections.
+    """
     layer = ds.CreateLayer("measurements_raw", srs, ogr.wkbNone)
     layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
     layer.CreateField(ogr.FieldDefn("dist", ogr.OFTReal))
@@ -298,14 +304,31 @@ def _write_measurements_raw(ds, srs, raw_measurements) -> None:
     layer.CreateField(ogr.FieldDefn("mtype", ogr.OFTString))
     layer.CreateField(ogr.FieldDefn("reverse", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
+    f_code, f_dist, f_value, f_mtype, f_reverse = 0, 1, 2, 3, 4  # creation order
     for code, raw in (raw_measurements or {}).items():
+        mtype = raw.measurement_type
+        reverse = 1 if raw.reverse else 0
         for point in raw.points:
             feat = ogr.Feature(defn)
-            _set(feat, "pipe_code", code)
-            _set(feat, "dist", point.get("dist"))
-            _set(feat, "value", point.get("value"))
-            _set(feat, "mtype", raw.measurement_type)
-            feat.SetField("reverse", 1 if raw.reverse else 0)
+            if code is None:
+                feat.SetFieldNull(f_code)
+            else:
+                feat.SetField(f_code, code)
+            dist = point.get("dist")
+            if dist is None:
+                feat.SetFieldNull(f_dist)
+            else:
+                feat.SetField(f_dist, dist)
+            value = point.get("value")
+            if value is None:
+                feat.SetFieldNull(f_value)
+            else:
+                feat.SetField(f_value, value)
+            if mtype is None:
+                feat.SetFieldNull(f_mtype)
+            else:
+                feat.SetField(f_mtype, mtype)
+            feat.SetField(f_reverse, reverse)
             layer.CreateFeature(feat)
             feat = None
 
