@@ -76,9 +76,10 @@ def enrich(gpkg_path, correct_bob=True, min_segment=MIN_SEGMENT,
         "n_errors": n_errors,
         "n_warnings": n_warnings,
     }
-    from drainworks_plugin.io.geopackage_store import base_fingerprint, write_meta
+    from drainworks_plugin.io.geopackage_store import base_fingerprint_from, write_meta
     write_meta(gpkg_path, {
-        "enrich_fingerprint": base_fingerprint(gpkg_path),
+        # Reuse the base data already read above instead of re-reading the gpkg.
+        "enrich_fingerprint": base_fingerprint_from(pipes, raw, manholes),
         "enrich_settings": {"correct_bob": correct_bob, "min_segment": min_segment,
                             "bob_segment": bob_segment},
         "enrich_summary": {"n_segments": summary["n_segments"], "n_errors": summary["n_errors"],

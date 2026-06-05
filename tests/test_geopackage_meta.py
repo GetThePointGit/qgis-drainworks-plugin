@@ -1,7 +1,11 @@
 from drainworks_plugin.io.geopackage_store import (
     SCHEMA_VERSION,
     base_fingerprint,
+    base_fingerprint_from,
     berging_fingerprint,
+    read_manholes,
+    read_pipes,
+    read_raw_measurements,
     read_meta,
     write_base,
     write_meta,
@@ -28,6 +32,14 @@ def test_fingerprint_stable_and_changes_on_bob_edit(tmp_gpkg, tmp_path):
     other = tmp_path / "other.gpkg"
     _base(other, bob2=-3.0)
     assert base_fingerprint(other) != fp1           # a BOB change changes it
+
+
+def test_base_fingerprint_from_matches_reading_version(tmp_gpkg):
+    _base(tmp_gpkg)
+    from_path = base_fingerprint(tmp_gpkg)
+    from_data = base_fingerprint_from(read_pipes(tmp_gpkg), read_raw_measurements(tmp_gpkg),
+                                      read_manholes(tmp_gpkg))
+    assert from_path == from_data
 
 
 def test_berging_fingerprint_depends_on_sinks():

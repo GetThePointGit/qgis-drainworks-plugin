@@ -40,6 +40,30 @@ def _set(feature, name, value) -> None:
         feature.SetField(name, value)
 
 
+def _seti(feature, idx, value) -> None:
+    """Set a field by integer index, leaving it NULL when value is None.
+
+    OGR resolves a field name to an index on every ``SetField(name, ...)`` /
+    ``GetField(name)`` call; using the index skips that per-call lookup, which
+    dominates read/write time over millions of features.
+    """
+    if value is None:
+        feature.SetFieldNull(idx)
+    else:
+        feature.SetField(idx, value)
+
+
+def _field_index(layer) -> dict:
+    """Return ``{field_name: index}`` for ``layer``, resolved once.
+
+    Callers look indices up here before iterating features and then read/write by
+    index, avoiding OGR's per-call name->index resolution. A name absent from the
+    layer simply won't be a key (``dict.get`` returns None).
+    """
+    defn = layer.GetLayerDefn()
+    return {defn.GetFieldDefn(i).GetName(): i for i in range(defn.GetFieldCount())}
+
+
 def _parse_linestring_wkt(line_wkt):
     """Return [(x, y), ...] vertices of a WKT LINESTRING, or [] if not parseable."""
     if not line_wkt or "LINESTRING" not in line_wkt.upper():
@@ -205,10 +229,11 @@ def read_pipes(path) -> list:
     """Read the ``pipes`` layer back into rgs_ribx.Pipe entities."""
     ds = ogr.Open(str(path))
     layer = ds.GetLayerByName("pipes")
+    fi = _field_index(layer)
     pipes = []
     for feat in layer:
         geom = feat.GetGeometryRef()
-        date_str = feat.GetField("inspection_date")
+        date_str = feat.GetField(fi["inspection_date"])
         inspection_date = None
         if date_str:
             from datetime import date
@@ -216,23 +241,23 @@ def read_pipes(path) -> list:
             inspection_date = date.fromisoformat(date_str)
         # Fall back to the geometry length when the stored length is missing or
         # zero, so routing/profile distances are always available.
-        length = feat.GetField("length")
+        length = feat.GetField(fi["length"])
         if (not length) and geom is not None:
             length = geom.Length()
         pipes.append(
             rgs_ribx.Pipe(
-                code=feat.GetField("code"),
-                manhole1=feat.GetField("manhole1"),
-                manhole2=feat.GetField("manhole2"),
+                code=feat.GetField(fi["code"]),
+                manhole1=feat.GetField(fi["manhole1"]),
+                manhole2=feat.GetField(fi["manhole2"]),
                 geometry_wkt=geom.ExportToWkt() if geom else None,
-                shape=feat.GetField("shape") or "A",
-                diameter=feat.GetField("diameter"),
-                width=feat.GetField("width"),
-                bob1=feat.GetField("bob1"),
-                bob2=feat.GetField("bob2"),
+                shape=feat.GetField(fi["shape"]) or "A",
+                diameter=feat.GetField(fi["diameter"]),
+                width=feat.GetField(fi["width"]),
+                bob1=feat.GetField(fi["bob1"]),
+                bob2=feat.GetField(fi["bob2"]),
                 length=length,
-                material=feat.GetField("material"),
-                sewerage_type=feat.GetField("sewerage_type"),
+                material=feat.GetField(fi["material"]),
+                sewerage_type=feat.GetField(fi["sewerage_type"]),
                 inspection_date=inspection_date,
             )
         )
@@ -243,16 +268,17 @@ def read_manholes(path) -> list:
     """Read the ``manholes`` layer back into rgs_ribx.Manhole entities."""
     ds = ogr.Open(str(path))
     layer = ds.GetLayerByName("manholes")
+    fi = _field_index(layer)
     manholes = []
     for feat in layer:
         geom = feat.GetGeometryRef()
         manholes.append(
             rgs_ribx.Manhole(
-                code=feat.GetField("code"),
+                code=feat.GetField(fi["code"]),
                 geometry_wkt=geom.ExportToWkt() if geom else None,
-                node_type=feat.GetField("node_type"),
-                ground_level=feat.GetField("ground_level"),
-                is_sink=bool(feat.GetField("is_sink")),
+                node_type=feat.GetField(fi["node_type"]),
+                ground_level=feat.GetField(fi["ground_level"]),
+                is_sink=bool(feat.GetField(fi["is_sink"])),
             )
         )
     return manholes
@@ -281,11 +307,12 @@ def read_manhole_points(path):
     """Return {code: (x, y)} for all manholes with a point geometry."""
     ds = ogr.Open(str(path))
     layer = ds.GetLayerByName("manholes")
+    i_code = _field_index(layer)["code"]
     points = {}
     for feat in layer:
         geom = feat.GetGeometryRef()
         if geom is not None:
-            points[feat.GetField("code")] = (geom.GetX(), geom.GetY())
+            points[feat.GetField(i_code)] = (geom.GetX(), geom.GetY())
     return points
 
 
@@ -366,12 +393,15 @@ def read_raw_measurements(path) -> dict:
     meta = {}
     if layer is None:
         return grouped
+    fi = _field_index(layer)
+    i_code, i_dist, i_value = fi["pipe_code"], fi["dist"], fi["value"]
+    i_mtype, i_reverse = fi["mtype"], fi["reverse"]
     for feat in layer:
-        code = feat.GetField("pipe_code")
+        code = feat.GetField(i_code)
         grouped.setdefault(code, []).append(
-            {"dist": feat.GetField("dist"), "value": feat.GetField("value")})
+            {"dist": feat.GetField(i_dist), "value": feat.GetField(i_value)})
         if code not in meta:
-            meta[code] = (feat.GetField("mtype") or "", bool(feat.GetField("reverse")))
+            meta[code] = (feat.GetField(i_mtype) or "", bool(feat.GetField(i_reverse)))
     result = {}
     for code, points in grouped.items():
         mtype, reverse = meta[code]
@@ -427,15 +457,17 @@ def write_profile(path, rows) -> int:
     for name in ("dist", "bob", "obb", "water_level", "flooded_pct"):
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
     defn = layer.GetLayerDefn()
+    # Field indices in creation order; set by index (millions of profile points).
+    f_code, f_dist, f_bob, f_obb, f_wl, f_fp = 0, 1, 2, 3, 4, 5
     ds.StartTransaction()
     for row in rows:
         feat = ogr.Feature(defn)
-        _set(feat, "pipe_code", row.get("pipe_code"))
-        _set(feat, "dist", row.get("dist"))
-        _set(feat, "bob", row.get("bob"))
-        _set(feat, "obb", row.get("obb"))
-        _set(feat, "water_level", row.get("water_level"))
-        _set(feat, "flooded_pct", row.get("flooded_pct"))
+        _seti(feat, f_code, row.get("pipe_code"))
+        _seti(feat, f_dist, row.get("dist"))
+        _seti(feat, f_bob, row.get("bob"))
+        _seti(feat, f_obb, row.get("obb"))
+        _seti(feat, f_wl, row.get("water_level"))
+        _seti(feat, f_fp, row.get("flooded_pct"))
         if row.get("geometry_wkt"):
             feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
         layer.CreateFeature(feat)
@@ -445,6 +477,13 @@ def write_profile(path, rows) -> int:
     return len(rows)
 
 
+def _opt_idx(feat, idx):
+    """Return field ``idx`` or None when the index is absent (-1/None) or NULL."""
+    if idx is None or idx < 0 or feat.IsFieldNull(idx):
+        return None
+    return feat.GetField(idx)
+
+
 def read_profile(path) -> dict:
     """Return ``{pipe_code: [MeasurementPoint]}`` from the ``profile`` layer."""
     ds = ogr.Open(str(path))
@@ -452,23 +491,20 @@ def read_profile(path) -> dict:
     grouped = {}
     if layer is None:
         return grouped
+    fi = _field_index(layer)
+    i_code, i_dist, i_bob, i_obb = fi["pipe_code"], fi["dist"], fi["bob"], fi["obb"]
+    i_wl, i_fp = fi.get("water_level"), fi.get("flooded_pct")  # absent on old layers
     for feat in layer:
-        def _opt(name):
-            """Return the field ``name`` or None when NULL or absent (old profile layer)."""
-            try:
-                return None if feat.IsFieldNull(name) else feat.GetField(name)
-            except (RuntimeError, ValueError):
-                return None  # field absent on an old profile layer
-        mp = rgs_ribx.MeasurementPoint(dist=feat.GetField("dist"),
-                                       bob=feat.GetField("bob"),
-                                       obb=feat.GetField("obb"))
-        wl = _opt("water_level")
-        fp = _opt("flooded_pct")
+        mp = rgs_ribx.MeasurementPoint(dist=feat.GetField(i_dist),
+                                       bob=feat.GetField(i_bob),
+                                       obb=feat.GetField(i_obb))
+        wl = _opt_idx(feat, i_wl)
+        fp = _opt_idx(feat, i_fp)
         if wl is not None:
             mp.water_level = wl
         if fp is not None:
             mp.flooded_pct = fp
-        grouped.setdefault(feat.GetField("pipe_code"), []).append(mp)
+        grouped.setdefault(feat.GetField(i_code), []).append(mp)
     for points in grouped.values():
         points.sort(key=lambda p: p.dist)
     return grouped
@@ -482,19 +518,21 @@ def write_segments(path, rows) -> int:
     layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
     layer.CreateField(ogr.FieldDefn("source", ogr.OFTString))
     layer.CreateField(ogr.FieldDefn("n_measurements", ogr.OFTInteger))
-    for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
-                 "bob_highest", "slope_avg", "diameter", *SEGMENT_BERGING_FIELDS):
+    real_names = ("dist_from", "dist_to", "length", "bob_start", "bob_end",
+                  "bob_highest", "slope_avg", "diameter")
+    for name in (*real_names, *SEGMENT_BERGING_FIELDS):
         layer.CreateField(ogr.FieldDefn(name, ogr.OFTReal))
     defn = layer.GetLayerDefn()
+    fi = _field_index(layer)  # resolve once; set by index below
+    i_real = [fi[name] for name in real_names]
     ds.StartTransaction()
     for row in rows:
         feat = ogr.Feature(defn)
-        _set(feat, "pipe_code", row.get("pipe_code"))
-        _set(feat, "source", row.get("source"))
-        feat.SetField("n_measurements", int(row.get("n_measurements") or 0))
-        for name in ("dist_from", "dist_to", "length", "bob_start", "bob_end",
-                     "bob_highest", "slope_avg", "diameter"):
-            _set(feat, name, row.get(name))
+        _seti(feat, fi["pipe_code"], row.get("pipe_code"))
+        _seti(feat, fi["source"], row.get("source"))
+        feat.SetField(fi["n_measurements"], int(row.get("n_measurements") or 0))
+        for name, idx in zip(real_names, i_real):
+            _seti(feat, idx, row.get(name))
         if row.get("geometry_wkt"):
             feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
         layer.CreateFeature(feat)
@@ -511,23 +549,14 @@ def read_segments(path) -> list:
     out = []
     if layer is None:
         return out
+    fi = _field_index(layer)
+    plain = ("pipe_code", "source", "n_measurements", "dist_from", "dist_to",
+             "length", "bob_start", "bob_end", "bob_highest", "slope_avg", "diameter")
+    cols = [(name, fi[name]) for name in (*plain, *SEGMENT_BERGING_FIELDS)]
     for feat in layer:
-        row = {
-            "fid": feat.GetFID(),
-            "pipe_code": feat.GetField("pipe_code"),
-            "source": feat.GetField("source"),
-            "n_measurements": feat.GetField("n_measurements"),
-            "dist_from": feat.GetField("dist_from"),
-            "dist_to": feat.GetField("dist_to"),
-            "length": feat.GetField("length"),
-            "bob_start": feat.GetField("bob_start"),
-            "bob_end": feat.GetField("bob_end"),
-            "bob_highest": feat.GetField("bob_highest"),
-            "slope_avg": feat.GetField("slope_avg"),
-            "diameter": feat.GetField("diameter"),
-        }
-        for name in SEGMENT_BERGING_FIELDS:
-            row[name] = feat.GetField(name)
+        row = {"fid": feat.GetFID()}
+        for name, idx in cols:
+            row[name] = feat.GetField(idx)
         out.append(row)
     return out
 
@@ -536,13 +565,15 @@ def update_segments_berging(path, by_fid) -> int:
     """Set the berging fields on ``segments`` features keyed by OGR fid."""
     ds = ogr.Open(str(path), update=1)
     layer = ds.GetLayerByName("segments")
+    fi = _field_index(layer)
+    idxs = [(name, fi[name]) for name in SEGMENT_BERGING_FIELDS]
     ds.StartTransaction()
     for fid, values in by_fid.items():
         feat = layer.GetFeature(fid)
         if feat is None:
             continue
-        for name in SEGMENT_BERGING_FIELDS:
-            _set(feat, name, values.get(name))
+        for name, idx in idxs:
+            _seti(feat, idx, values.get(name))
         layer.SetFeature(feat)
         feat = None
     ds.CommitTransaction()
@@ -600,23 +631,38 @@ def _round6(value):
     return None if value is None else round(float(value), 6)
 
 
-def base_fingerprint(path) -> str:
-    """A stable SHA-1 over the base data that drives the enrich output."""
-    import hashlib
-
+def _fingerprint_parts(pipes, raw, manholes) -> list:
+    """Build the stable tuple list base_fingerprint hashes (shared by both entries)."""
     parts = []
-    for p in sorted(read_pipes(path), key=lambda x: x.code or ""):
+    for p in sorted(pipes, key=lambda x: x.code or ""):
         parts.append(("P", p.code, p.manhole1, p.manhole2, _round6(p.bob1), _round6(p.bob2),
                       _round6(p.diameter), _round6(p.length), p.shape))
-    raw = read_raw_measurements(path)
     for code in sorted(raw):
         rm = raw[code]
         for pt in sorted(rm.points, key=lambda d: d.get("dist") or 0.0):
             parts.append(("M", code, _round6(pt.get("dist")), _round6(pt.get("value")),
                           rm.measurement_type, rm.reverse))
-    for m in sorted(read_manholes(path), key=lambda x: x.code or ""):
+    for m in sorted(manholes, key=lambda x: x.code or ""):
         parts.append(("K", m.code, _round6(m.ground_level), m.geometry_wkt is not None))
-    return hashlib.sha1(repr(parts).encode("utf-8")).hexdigest()
+    return parts
+
+
+def base_fingerprint_from(pipes, raw, manholes) -> str:
+    """``base_fingerprint`` computed from already-loaded base data (no re-read).
+
+    Identical hash to :func:`base_fingerprint` for the same data; lets ``enrich``
+    reuse the pipes/raw/manholes it already read instead of reading them again.
+    """
+    import hashlib
+
+    return hashlib.sha1(
+        repr(_fingerprint_parts(pipes, raw, manholes)).encode("utf-8")).hexdigest()
+
+
+def base_fingerprint(path) -> str:
+    """A stable SHA-1 over the base data that drives the enrich output."""
+    return base_fingerprint_from(
+        read_pipes(path), read_raw_measurements(path), read_manholes(path))
 
 
 def berging_fingerprint(enrich_fp, sinks) -> str:
