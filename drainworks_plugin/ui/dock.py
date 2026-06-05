@@ -486,17 +486,27 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _enrich_done(self, task):
-        """Enrich task callback: clear busy, report errors, refresh summary and layers."""
+        """Enrich task callback: defer the GUI work out of the QgsTask.finished() stack.
+
+        Touching the message bar / reloading layers from inside ``finished()`` can
+        crash QGIS, so hand the result to ``_enrich_finalize`` one event-loop tick later.
+        """
+        from qgis.PyQt.QtCore import QTimer
+        error, result = task.error, task.result
+        QTimer.singleShot(0, lambda: self._enrich_finalize(error, result))
+
+    def _enrich_finalize(self, error, result):
+        """Clear busy, report errors, refresh summary and layers (off-stack)."""
         if self._busy is not None:
             self._busy.stop()
         self._busy = None
-        if task.error is not None:
-            self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {task.error}")
+        if error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {error}")
             self.active_task = None
             self._refresh_step_buttons()
             return
         self.state.mark_enriched()
-        s = task.result or {}
+        s = result or {}
         self.enrich_summary.setText(
             f"{s.get('n_segments', 0)} segmenten · {s.get('n_errors', 0)} fouten · "
             f"{s.get('n_warnings', 0)} waarschuwingen")
@@ -532,12 +542,22 @@ class DrainworksDock(QDockWidget):
         self._run_task(task)
 
     def _loss_done(self, task):
-        """Berging task callback: clear busy, report errors, show total and refresh."""
+        """Berging task callback: defer the GUI work out of the QgsTask.finished() stack.
+
+        Touching the message bar / reloading layers from inside ``finished()`` can
+        crash QGIS, so hand the result to ``_loss_finalize`` one event-loop tick later.
+        """
+        from qgis.PyQt.QtCore import QTimer
+        error, result = task.error, task.result
+        QTimer.singleShot(0, lambda: self._loss_finalize(error, result))
+
+    def _loss_finalize(self, error, result):
+        """Clear busy, report errors, show the total and refresh layers (off-stack)."""
         if self._busy is not None:
             self._busy.stop()
         self._busy = None
-        if task.error is not None:
-            self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {task.error}")
+        if error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {error}")
             self.active_task = None
             self._refresh_step_buttons()
             return
@@ -551,7 +571,7 @@ class DrainworksDock(QDockWidget):
         self._rebuild()
         self.active_task = None
         self.iface.messageBar().pushSuccess(
-            "Drainworks", f"Verloren berging berekend ({task.result} segmenten).")
+            "Drainworks", f"Verloren berging berekend ({result} segmenten).")
 
     def _run_task(self, task):
         """Submit a QgsTask to the task manager, disabling the step buttons."""

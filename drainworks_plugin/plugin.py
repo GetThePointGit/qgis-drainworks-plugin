@@ -142,16 +142,29 @@ class DrainworksPlugin:
             self._busy.set_progress(pct)
 
     def _import_done(self, task):
-        """Main-thread callback after the import task finishes."""
+        """Main-thread callback after the import task finishes.
+
+        Defers the message-bar + layer-loading work one event-loop tick out of the
+        ``QgsTask.finished()`` call stack: mutating the QGIS message bar from inside
+        ``finished()`` can corrupt its widget state and crash QGIS.
+        """
+        from qgis.PyQt.QtCore import QTimer
+
+        error = task.error
+        result = None if error is not None else str(task.result)
+        QTimer.singleShot(0, lambda: self._import_finalize(error, result))
+
+    def _import_finalize(self, error, gpkg_out):
+        """Stop the busy bar, then load the layers or report the error (off-stack)."""
         if self._busy is not None:
             self._busy.stop()
         self._busy = None
         self._import_task = None
-        if task.error is not None:
-            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {task.error}")
+        if error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {error}")
             return
         try:
-            self._load_and_show(str(task.result))
+            self._load_and_show(gpkg_out)
         except Exception as exc:
             self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
 
