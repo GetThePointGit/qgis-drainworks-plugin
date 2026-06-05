@@ -60,10 +60,18 @@ user to verify behaviour.
   (`base_fingerprint`) + used settings + summaries. On load the dock compares the
   fingerprint to decide "actueel" vs "verouderd" (`PipelineState.restore`). If you change
   what enrich consumes, keep `base_fingerprint` consistent or staleness detection breaks.
-- `write_base` stamps `dw_meta.schema_version` (= `geopackage_store.SCHEMA_VERSION`). On
-  open, `check_base_schema` validates the layers/fields/version and returns a Dutch error
-  for foreign/old GeoPackages (so reads don't crash with OGR's "Illegal field requested in
-  GetField()"). Bump `SCHEMA_VERSION` when the base layers change incompatibly.
+- **GeoPackage schema version.** `write_base` stamps `dw_meta.schema_version`
+  (= `geopackage_store.SCHEMA_VERSION`, currently `1`). On open, the dock's import flow
+  calls `geopackage_store.check_base_schema(path)` *before* loading: it checks the required
+  layers (`pipes`, `manholes`) and their required fields (`geopackage_store._REQUIRED_FIELDS`)
+  plus the stored version, and returns a Dutch message (or `None` if OK). The dock shows that
+  message instead of reading the gpkg — without it, foreign/old GeoPackages crash deep in the
+  reads with OGR's cryptic "Illegal field requested in GetField()".
+  Policy (decided with the user): **refuse incompatible GeoPackages with a clear explanation;
+  do not auto-migrate** — the user re-imports from the RIBX/SUFRIB source.
+  When you change the base layers incompatibly (rename/remove a required field, change a
+  layer): bump `SCHEMA_VERSION`, update `_REQUIRED_FIELDS` if the field set changed, and add a
+  `check_base_schema` test (`tests/test_geopackage_schema.py`).
 - The network graph is immutable after `set_data`; `SewerNetwork.shortest_path` is memoised.
 - Settings (enrich/berging/side-view) persist via `QgsSettings` (JSON) and, per-gpkg, in
   `dw_meta`.
