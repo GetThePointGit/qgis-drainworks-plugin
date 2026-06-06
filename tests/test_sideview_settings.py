@@ -6,6 +6,7 @@ def test_defaults():
     assert s.legend_position == "top-left"
     assert s.legend_white_bg is True          # white background on by default
     assert s.show_putcodes is True
+    assert s.show_water is True                # water fill shown by default
     assert s.line("bob")["color"] == "#333333"
     assert s.line("water")["width"] == 1
     assert set(s.lines) == set(LINE_DEFAULTS)
@@ -15,9 +16,11 @@ def test_roundtrip_dict():
     s = SideViewSettings()
     s.lines["bob"]["color"] = "#ff0000"
     s.lines["bob"]["width"] = 4
+    s.show_water = False
     s2 = SideViewSettings.from_dict(s.to_dict())
     assert s2.line("bob") == {"color": "#ff0000", "width": 4}
     assert s2.legend_white_bg is True
+    assert s2.show_water is False               # toggle persists
 
 
 def test_from_dict_fills_missing_lines_and_keys():

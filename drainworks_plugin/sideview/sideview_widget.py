@@ -141,23 +141,39 @@ class SideViewWidget(QWidget):
         self.plot.plot(water_dists, water_levels, pen=self._pen("water", dashed=True))
         self._water_legend(brush_color)
 
-    def _add_water_fill_aligned(self, dists, bobs, waters):
-        """Fill water where ``waters > bobs``, as flat pools with vertical shores.
+    def _add_water_fill_aligned(self, dists, bobs, water_levels):
+        """Fill water as flat pools with shores, per run of measured points.
 
-        ``waters`` is the per-vertex water level (or the invert where dry). Shore
-        points are inserted where the surface meets the invert, so the surface stays
-        horizontal across a pool and the fill drops to zero at the shore instead of
-        sloping down to the next dry measurement point.
+        ``water_levels`` is the per-vertex water level with ``None`` where the vertex
+        has no measurement (e.g. a pipe-end anchor). Each maximal run of consecutive
+        non-None vertices is filled on its own, so the water never bridges the
+        unmeasured gap of a partially-measured pipe. Within a run, shore points keep
+        the surface flat across each pool (see :func:`_shoreline_curves`).
         """
-        xs, bb, ww, wet = _shoreline_curves(dists, bobs, waters)
         brush_color = self._water_brush()
-        self.plot.addItem(pg.FillBetweenItem(
-            pg.PlotCurveItem(xs, bb), pg.PlotCurveItem(xs, ww), brush=pg.mkBrush(brush_color)))
-        # Dashed surface line only over pools (NaN breaks it between separate pools).
         nan = float("nan")
-        surf = [w if f else nan for w, f in zip(ww, wet)]
-        self.plot.plot(xs, surf, pen=self._pen("water", dashed=True), connect="finite")
-        self._water_legend(brush_color)
+        drew = False
+        i, n = 0, len(dists)
+        while i < n:
+            if water_levels[i] is None:
+                i += 1
+                continue
+            j = i
+            while j < n and water_levels[j] is not None:
+                j += 1
+            d, b, w = dists[i:j], bobs[i:j], water_levels[i:j]
+            i = j
+            if len(d) < 2 or not any(wl > bv + 1e-9 for wl, bv in zip(w, b)):
+                continue
+            xs, bb, ww, wet = _shoreline_curves(d, b, w)
+            self.plot.addItem(pg.FillBetweenItem(
+                pg.PlotCurveItem(xs, bb), pg.PlotCurveItem(xs, ww),
+                brush=pg.mkBrush(brush_color)))
+            surf = [wv if f else nan for wv, f in zip(ww, wet)]
+            self.plot.plot(xs, surf, pen=self._pen("water", dashed=True), connect="finite")
+            drew = True
+        if drew:
+            self._water_legend(brush_color)
 
     def show_profile(self, profile) -> None:
         """Render a Profile."""
@@ -189,11 +205,11 @@ class SideViewWidget(QWidget):
                        skipFiniteCheck=True, **marker_kw)
 
         # Water-level fill (verloren berging) where water_level is set — drawn as flat
-        # pools with shore points so it doesn't slope into dry stretches.
-        if any(v.water_level is not None for v in profile.vertices):
-            waters = [v.water_level if v.water_level is not None else v.bob
-                      for v in profile.vertices]
-            self._add_water_fill_aligned(dists, bobs, waters)
+        # pools with shore points so it doesn't slope into dry stretches. Toggleable.
+        if getattr(self, "_show_water", True) and \
+                any(v.water_level is not None for v in profile.vertices):
+            water_levels = [v.water_level for v in profile.vertices]  # None preserved
+            self._add_water_fill_aligned(dists, bobs, water_levels)
 
         # Each put: a solid green invert->maaiveld line, plus a thin light full-height
         # line carrying the put code as a vertical label. Both stay out of auto-zoom.
@@ -234,6 +250,7 @@ class SideViewWidget(QWidget):
     def apply_settings(self, settings):
         """Apply SideViewSettings (re-render the current profile if any)."""
         self._show_putcodes = settings.show_putcodes
+        self._show_water = settings.show_water
         self._lines = settings.lines
         legend = self.plot.plotItem.legend
         if legend is not None:

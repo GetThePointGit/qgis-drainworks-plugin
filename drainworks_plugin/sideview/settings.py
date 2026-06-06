@@ -29,6 +29,7 @@ class SideViewSettings:
     legend_position: str = "top-left"   # top-left|top-right|bottom-left|bottom-right|below
     legend_white_bg: bool = True
     show_putcodes: bool = True
+    show_water: bool = True              # show the water / verloren-berging fill
     lines: dict = field(default_factory=_default_lines)
 
     def line(self, key):
@@ -41,6 +42,7 @@ class SideViewSettings:
             "legend_position": self.legend_position,
             "legend_white_bg": self.legend_white_bg,
             "show_putcodes": self.show_putcodes,
+            "show_water": self.show_water,
             "lines": {key: dict(value) for key, value in self.lines.items()},
         }
 
@@ -55,6 +57,8 @@ class SideViewSettings:
             s.legend_white_bg = bool(data["legend_white_bg"])
         if "show_putcodes" in data:
             s.show_putcodes = bool(data["show_putcodes"])
+        if "show_water" in data:
+            s.show_water = bool(data["show_water"])
         stored = data.get("lines") or {}
         for key, default in LINE_DEFAULTS.items():
             merged = dict(default)

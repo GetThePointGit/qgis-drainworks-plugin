@@ -70,9 +70,12 @@ class SideViewSettingsDialog(QDialog):
         self.chk_white.setChecked(settings.legend_white_bg)
         self.chk_putcodes = QCheckBox()
         self.chk_putcodes.setChecked(settings.show_putcodes)
+        self.chk_water = QCheckBox()
+        self.chk_water.setChecked(settings.show_water)
         form.addRow("Legenda-positie", self.cmb_legend)
         form.addRow("Witte legenda-achtergrond", self.chk_white)
         form.addRow("Toon putcodes", self.chk_putcodes)
+        form.addRow("Toon water (verloren berging)", self.chk_water)
 
         self.rows = {}
         for key in LINE_DEFAULTS:
@@ -95,6 +98,7 @@ class SideViewSettingsDialog(QDialog):
         self.cmb_legend.setCurrentIndex(self.cmb_legend.findData(defaults.legend_position))
         self.chk_white.setChecked(defaults.legend_white_bg)
         self.chk_putcodes.setChecked(defaults.show_putcodes)
+        self.chk_water.setChecked(defaults.show_water)
         for key, row in self.rows.items():
             d = defaults.line(key)
             row._color = d["color"]
@@ -107,4 +111,5 @@ class SideViewSettingsDialog(QDialog):
             legend_position=self.cmb_legend.currentData(),
             legend_white_bg=self.chk_white.isChecked(),
             show_putcodes=self.chk_putcodes.isChecked(),
+            show_water=self.chk_water.isChecked(),
             lines={key: row.value() for key, row in self.rows.items()})
