@@ -10,6 +10,35 @@ from qgis.PyQt.QtCore import QEvent, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QVBoxLayout, QWidget
 
 
+def _shoreline_curves(dists, bobs, waters):
+    """Return ``(xs, bobs, waters, wet)`` for the water fill, with shore points inserted.
+
+    ``waters`` is the per-vertex water level (the invert where dry). At a wet/dry
+    transition a point is inserted where the invert reaches the *pool* level (the wet
+    side's water), so the surface stays horizontal across the pool and drops to zero
+    there (a shore) instead of sloping toward the next dry invert. The returned
+    ``waters`` are clamped to ``>= bobs``; ``wet[i]`` marks points that carry water
+    (used to draw the dashed surface line only over pools).
+    """
+    eps = 1e-9
+    xs, bb, ww, wet = [], [], [], []
+    for i in range(len(dists)):
+        if i > 0:
+            d0, b0, w0 = dists[i - 1], bobs[i - 1], waters[i - 1]
+            d1, b1, w1 = dists[i], bobs[i], waters[i]
+            wet0, wet1 = (w0 - b0 > eps), (w1 - b1 > eps)
+            if wet0 != wet1:
+                level = w0 if wet0 else w1                 # pool level from the wet side
+                t = (level - b0) / (b1 - b0) if b1 != b0 else 0.5
+                t = min(max(t, 0.0), 1.0)
+                xs.append(d0 + t * (d1 - d0))
+                bb.append(level); ww.append(level); wet.append(True)   # shore at pool level
+        w = max(waters[i], bobs[i])
+        xs.append(dists[i]); bb.append(bobs[i]); ww.append(w)
+        wet.append(w - bobs[i] > eps)
+    return xs, bb, ww, wet
+
+
 class SideViewWidget(QWidget):
     """Plots a :class:`Profile` (from profile_builder.build_profile)."""
 
@@ -85,16 +114,50 @@ class SideViewWidget(QWidget):
             kw["style"] = Qt.DashLine
         return pg.mkPen(**kw)
 
+    def _water_brush(self):
+        """Return the translucent brush colour for the water fill."""
+        from qgis.PyQt.QtGui import QColor
+        c = QColor(self._style("water").get("color", "#2c7fb8"))
+        c.setAlpha(120)
+        return c
+
+    def _water_legend(self, brush_color):
+        """Add a single legend entry (dashed line + filled swatch) for the water.
+
+        An empty named curve carrying ``fillBrush``/``fillLevel`` renders a filled
+        sample in the legend (the FillBetweenItem itself has no legend entry) and is
+        removed by ``plot.clear()`` on the next render, so it never duplicates.
+        """
+        self.plot.plot([], [], pen=self._pen("water", dashed=True),
+                       fillLevel=0, fillBrush=pg.mkBrush(brush_color),
+                       name="Water (verloren berging)")
+
     def _add_water_fill(self, bob_dists, bobs, water_dists, water_levels):
         """Fill (verloren berging) between the invert and the water-level curves."""
-        from qgis.PyQt.QtGui import QColor
         bob_curve = pg.PlotCurveItem(bob_dists, bobs)
         water_curve = pg.PlotCurveItem(water_dists, water_levels)
-        brush_color = QColor(self._style("water").get("color", "#2c7fb8"))
-        brush_color.setAlpha(120)
+        brush_color = self._water_brush()
         self.plot.addItem(pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(brush_color)))
-        self.plot.plot(water_dists, water_levels, pen=self._pen("water", dashed=True),
-                       name="Waterpeil")
+        self.plot.plot(water_dists, water_levels, pen=self._pen("water", dashed=True))
+        self._water_legend(brush_color)
+
+    def _add_water_fill_aligned(self, dists, bobs, waters):
+        """Fill water where ``waters > bobs``, as flat pools with vertical shores.
+
+        ``waters`` is the per-vertex water level (or the invert where dry). Shore
+        points are inserted where the surface meets the invert, so the surface stays
+        horizontal across a pool and the fill drops to zero at the shore instead of
+        sloping down to the next dry measurement point.
+        """
+        xs, bb, ww, wet = _shoreline_curves(dists, bobs, waters)
+        brush_color = self._water_brush()
+        self.plot.addItem(pg.FillBetweenItem(
+            pg.PlotCurveItem(xs, bb), pg.PlotCurveItem(xs, ww), brush=pg.mkBrush(brush_color)))
+        # Dashed surface line only over pools (NaN breaks it between separate pools).
+        nan = float("nan")
+        surf = [w if f else nan for w, f in zip(ww, wet)]
+        self.plot.plot(xs, surf, pen=self._pen("water", dashed=True), connect="finite")
+        self._water_legend(brush_color)
 
     def show_profile(self, profile) -> None:
         """Render a Profile."""
@@ -125,10 +188,12 @@ class SideViewWidget(QWidget):
         self.plot.plot(dists, bobs, pen=self._pen("bob"), name="BOB gemeten",
                        skipFiniteCheck=True, **marker_kw)
 
-        # Water-level fill (verloren berging) where water_level is set.
-        water = [v.water_level if v.water_level is not None else v.bob for v in profile.vertices]
+        # Water-level fill (verloren berging) where water_level is set — drawn as flat
+        # pools with shore points so it doesn't slope into dry stretches.
         if any(v.water_level is not None for v in profile.vertices):
-            self._add_water_fill(dists, bobs, dists, water)
+            waters = [v.water_level if v.water_level is not None else v.bob
+                      for v in profile.vertices]
+            self._add_water_fill_aligned(dists, bobs, waters)
 
         # Each put: a solid green invert->maaiveld line, plus a thin light full-height
         # line carrying the put code as a vertical label. Both stay out of auto-zoom.

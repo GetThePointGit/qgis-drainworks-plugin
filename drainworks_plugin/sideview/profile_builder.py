@@ -86,16 +86,26 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
         if measured:
             # Follow the measured invert (with water level), oriented along travel.
             ordered = sorted(measured, key=lambda m: m["dist"], reverse=not forward)
-            for m in ordered:
-                along = m["dist"] if forward else (length - m["dist"])
-                profile.vertices.append(
-                    ProfileVertex(
-                        dist=span_start + along,
-                        bob=m["bob"],
-                        obb=m["obb"],
-                        water_level=m.get("water_level"),
-                    )
+            pts = [
+                ProfileVertex(
+                    dist=span_start + (m["dist"] if forward else (length - m["dist"])),
+                    bob=m["bob"], obb=m["obb"], water_level=m.get("water_level"),
                 )
+                for m in ordered
+            ]
+            # Anchor the line at the pipe's own end BOBs when the inspection does not
+            # cover the whole pipe, so a partial/short measurement doesn't draw a
+            # straight line across the gap to the neighbouring pipe.
+            anchor_start = pipe.bob1 if forward else pipe.bob2
+            anchor_end = pipe.bob2 if forward else pipe.bob1
+            eps = 0.05  # m
+            if anchor_start is not None and (not pts or pts[0].dist - span_start > eps):
+                pts.insert(0, ProfileVertex(dist=span_start, bob=anchor_start,
+                                            obb=anchor_start + diam))
+            if anchor_end is not None and (not pts or span_end - pts[-1].dist > eps):
+                pts.append(ProfileVertex(dist=span_end, bob=anchor_end,
+                                         obb=anchor_end + diam))
+            profile.vertices.extend(pts)
         else:
             start_bob = pipe.bob1 if forward else pipe.bob2
             end_bob = pipe.bob2 if forward else pipe.bob1
