@@ -22,13 +22,19 @@ De eerste stap leest riooldata in en schrijft een **GeoPackage met basisdata** w
 > 📷 **Screenshot:** *het importdialoog "Drainworks — rioolgegevens importeren" met de drie
 > velden ingevuld.* `screenshots/01-importdialoog.png`
 
-Het inlezen draait op de achtergrond; bovenin verschijnt een melding met een lopende
-voortgangsbalk. Als het klaar is, worden de lagen **Putten**, **Leidingen** en (na verrijken)
-**Segmenten** in een laaggroep met de naam van de GeoPackage op de kaart geladen, en zoomt de
-kaart naar het netwerk.
+Het inlezen draait op de achtergrond; bovenin verschijnt een **voortgangsbalk met
+benoemde stappen** (bijv. *RIBX inlezen… → GeoPackage wegschrijven… → Klaar*). Als het
+klaar is, worden de lagen **Putten**, **Leidingen** en (na verrijken) **Segmenten** in een
+laaggroep met de naam van de GeoPackage op de kaart geladen, en zoomt de kaart naar het
+netwerk.
 
 > 📷 **Screenshot:** *de voortgangsbalk bovenin tijdens het importeren.*
 > `screenshots/01-voortgang.png`
+
+> **Oude of niet-Drainworks GeoPackages.** Open je een GeoPackage die niet het
+> Drainworks-schema heeft (gemaakt met een ander programma of een oudere versie), dan
+> verschijnt een duidelijke melding en wordt hij **niet** geladen. Maak hem in dat geval
+> opnieuw aan door het oorspronkelijke RIBX/SUFRIB-bestand te importeren.
 
 ## Resultaat
 

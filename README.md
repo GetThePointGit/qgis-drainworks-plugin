@@ -16,7 +16,8 @@ network to inspect its profile (BOB, water level, maaiveld) in an embedded graph
 ## What it does
 
 **Three-step pipeline** (state persisted in the GeoPackage; each step re-runnable; all run
-asynchronously in a `QgsTask` with a progress bar in the message bar):
+asynchronously in a `QgsTask` with a **stepped** progress bar — named phases — in the
+message bar):
 
 1. **Importeren** — parse RIBX (NEN 13508-2 XML) / SUFRIB (`.rib` + `.hel`/`.rmb`) / an
    existing GeoPackage → base data (`manholes`, `pipes`) + raw inclination
@@ -41,7 +42,8 @@ max. waterdiepte). Per-line colour/width and legend options for the side-view.
 **Up-to-date detection** — a `dw_meta` table in the GeoPackage stores a fingerprint of the
 base data plus the settings and summaries used. Re-opening a GeoPackage shows the steps
 green (✓ actueel) when still current, and detects in-between/external base-data edits
-(⚠ verouderd).
+(⚠ verouderd). `dw_meta` also stamps a **schema version**; opening a foreign/old GeoPackage
+is refused up front with a clear message instead of crashing on a missing field.
 
 ---
 

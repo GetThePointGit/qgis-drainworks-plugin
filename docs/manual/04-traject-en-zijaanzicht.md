@@ -37,12 +37,15 @@ niets.
 > 📷 **Screenshot:** *de trajectknoppenbalk boven het langsprofiel.*
 > `screenshots/04-trajectbalk.png`
 
-## Punten verwijderen
+## Punten verwijderen & snel afronden
 
 - **Verwijdermodus** + klik op een punt, of
-- **Command-klik / rechtermuisklik** op een put = dat ene punt eruit. (Op macOS wordt
-  Ctrl+klik een rechtermuisklik; gebruik daarom de Command-toets.) Het **hele** traject
-  wissen doe je met **Wis**.
+- **Rechtermuisklik op een trajectpunt** = dat ene punt eruit. (Op macOS wordt Ctrl+klik
+  een rechtermuisklik; gebruik daarom de Command-toets — of de Ctrl-toets met links.)
+- **Rechtermuisklik náást een trajectpunt** (in de lege ruimte, terwijl er al een traject
+  is) = **Klaar**: dit sluit de trajectmodus af, net als de knop.
+
+Het **hele** traject wissen doe je met **Wis**.
 
 ## Het langsprofiel
 
@@ -52,10 +55,24 @@ Het zijaanzicht toont, langs de afstand van het traject:
 - de **rechte BOB-leidinglijn** (bob1→bob2) als referentie;
 - de **putten** als verticale lijnen (bodem→maaiveld) met de putcode;
 - de **maaiveldlijn** die de putten verbindt;
-- de **waterpeil/berging-vulling** (na een berekening).
+- het **waterpeil + de berging-vulling** (na een berekening).
 
 Het deel dat je *live aan het bewerken* bent, wordt licht (alleen de BOB-leidinglijn)
 getekend; het al gekozen deel toont de metingen en het waterpeil.
+
+### Het waterpeil (verloren berging)
+
+- **Nauwkeurig** berekend (zie stap 3): het water wordt per meetpunt getekend als **vlakke
+  plassen**. Waar de bodem boven het waterpeil uitkomt, eindigt de plas met een **oever**
+  (de vulling loopt daar naar nul) i.p.v. schuin door te lopen.
+- **Snel** berekend: één waterpeil per segment, getekend in het **midden van elk segment**
+  en lineair geïnterpoleerd naar het volgende — een gladdere, schuine lijn.
+- Dekt een meting maar een deel van de leiding, dan loopt de plas **horizontaal door tot
+  het leidingeinde** (geknipt tegen de bodem), zodat het water niet middenin de leiding
+  stopt.
+- **Aan/uit zetten:** klik op het legenda-item **"Water (verloren berging)"** in de
+  grafiek (uit → label "(uit)"; nogmaals klikken zet het weer aan). Je kunt het ook
+  standaard uitzetten via de zijaanzicht-instellingen (zie onder).
 
 Beweeg je de muis over het traject op de kaart, dan verschijnt een **cursor** in de grafiek
 op die positie (en andersom). Dit werkt ook als de trajectmodus uitstaat, zolang er een
@@ -72,7 +89,9 @@ Klik op **Zijaanzicht** in de hoofdknoppenbalk (tandwielicoon) voor:
   **witte legenda-achtergrond** (standaard aan);
 - **per-lijn kleur en dikte** (BOB gemeten, bovenkant buis, BOB-leiding, maaiveld, put-lijn,
   waterpeil);
-- **toon putcodes**.
+- **toon putcodes**;
+- **toon water (verloren berging)** — de standaard zichtbaarheid van het watervlak (los van
+  de snelle aan/uit-toggle op het legenda-item in de grafiek).
 
 De instellingen zijn persistent (Annuleren / Standaardwaarden).
 

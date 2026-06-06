@@ -23,7 +23,8 @@ tandwiel.
 
 ## Uitvoeren
 
-Klik op **Verrijk basisdata**. De stap draait op de achtergrond (voortgangsbalk bovenin) en
+Klik op **Verrijk basisdata**. De stap draait op de achtergrond — bovenin loopt een
+voortgangsbalk met benoemde stappen (*Valideren… → Hoogtes integreren… → Segmenten…*) — en
 doet:
 
 1. **Validatie** — controleert volledigheid (code, BOB, diameter, knooppunten aanwezig) en

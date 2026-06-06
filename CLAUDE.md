@@ -75,6 +75,16 @@ user to verify behaviour.
 - The network graph is immutable after `set_data`; `SewerNetwork.shortest_path` is memoised.
 - Settings (enrich/berging/side-view) persist via `QgsSettings` (JSON) and, per-gpkg, in
   `dw_meta`.
+- **Don't do GUI work inside `QgsTask.finished()`.** Touching the message bar or loading
+  layers in the task's `finished`/`on_done` callback can corrupt QGIS' widget state and
+  crash (SIGBUS in `QgsMessageBar::showItem`). Extract `task.error`/`task.result`, then
+  defer the work one event-loop tick: `QTimer.singleShot(0, lambda: self._finalize(...))`
+  (see `dock._enrich_done`/`_loss_done`, `plugin._import_done`).
+- **GeoPackage read/write goes by field index, not name.** OGR resolves a field name to an
+  index on every `GetField(name)`/`SetField(name, ...)` call; over millions of features that
+  dominates. Resolve once via `geopackage_store._field_index(layer)` and read/write by index
+  (`_seti`). Long pipeline steps take an `on_progress(fraction, label)` callback; the
+  `QgsTask` fans it out via a `progress(pct, label)` signal (`busy.bind_progress`).
 
 ## Workflow used to build this
 

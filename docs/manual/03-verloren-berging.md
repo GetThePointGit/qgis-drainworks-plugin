@@ -34,10 +34,15 @@ Klik op het **tandwiel** naast de knop:
 ## Uitvoeren
 
 Klik op **Bereken verloren berging**. (Eerst verrijken; staat de basisdata op "verouderd",
-dan vraagt de plug-in je eerst opnieuw te verrijken.) De stap draait op de achtergrond.
+dan vraagt de plug-in je eerst opnieuw te verrijken.) De stap draait op de achtergrond, met
+bovenin een voortgangsbalk met benoemde stappen (*Waterstanden berekenen… → wegschrijven…*).
 
 Per segment worden gevuld: **waterpeil**, **vullingspercentage** (gemiddeld en max),
 **verloren volume (m³)**, **overstroomde lengte** en **max. waterdiepte**.
+
+Het berekende waterpeil zie je in het **zijaanzicht** van een traject (zie *04 — Traject &
+zijaanzicht*): bij **Nauwkeurig** als vlakke plassen per meetpunt, bij **Snel** als één
+peil per segment.
 
 ## Resultaat
 
