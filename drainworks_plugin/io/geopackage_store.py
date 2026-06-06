@@ -17,6 +17,12 @@ RD_EPSG = 28992
 # can recognise (and refuse) GeoPackages from other tools or older plug-in versions.
 SCHEMA_VERSION = 1
 
+# Commit the feature inserts in batches of this many. A single transaction over
+# millions of features holds an unbounded SQLite journal in memory and can crash the
+# GDAL/SQLite write on Windows; committing periodically bounds it. Module-level so
+# tests can lower it to exercise the batch boundary.
+WRITE_BATCH = 50000
+
 # Minimal set of fields a Drainworks base GeoPackage must expose per layer; used to
 # tell a real Drainworks gpkg apart from a foreign/old one before reading it.
 _REQUIRED_FIELDS = {
@@ -332,6 +338,8 @@ def _write_measurements_raw(ds, srs, raw_measurements) -> None:
     layer.CreateField(ogr.FieldDefn("reverse", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
     f_code, f_dist, f_value, f_mtype, f_reverse = 0, 1, 2, 3, 4  # creation order
+    n = 0
+    ds.StartTransaction()
     for code, raw in (raw_measurements or {}).items():
         mtype = raw.measurement_type
         reverse = 1 if raw.reverse else 0
@@ -358,6 +366,11 @@ def _write_measurements_raw(ds, srs, raw_measurements) -> None:
             feat.SetField(f_reverse, reverse)
             layer.CreateFeature(feat)
             feat = None
+            n += 1
+            if n % WRITE_BATCH == 0:        # bound the transaction size (Windows safety)
+                ds.CommitTransaction()
+                ds.StartTransaction()
+    ds.CommitTransaction()
 
 
 def write_base(path, manholes, pipes, raw_measurements) -> Path:
@@ -375,8 +388,10 @@ def write_base(path, manholes, pipes, raw_measurements) -> Path:
     ds.StartTransaction()
     _write_manholes(ds, srs, manholes, bottom_levels)
     _write_pipes(ds, srs, pipes)
-    _write_measurements_raw(ds, srs, raw_measurements)
     ds.CommitTransaction()
+    # measurements_raw can be millions of rows -> it manages its own batched
+    # transactions (committing periodically) rather than one giant transaction.
+    _write_measurements_raw(ds, srs, raw_measurements)
     ds = None
     # Stamp the schema version so the GeoPackage can be recognised on re-open.
     write_meta(path, {"schema_version": SCHEMA_VERSION})
@@ -460,7 +475,7 @@ def write_profile(path, rows) -> int:
     # Field indices in creation order; set by index (millions of profile points).
     f_code, f_dist, f_bob, f_obb, f_wl, f_fp = 0, 1, 2, 3, 4, 5
     ds.StartTransaction()
-    for row in rows:
+    for n, row in enumerate(rows, 1):
         feat = ogr.Feature(defn)
         _seti(feat, f_code, row.get("pipe_code"))
         _seti(feat, f_dist, row.get("dist"))
@@ -472,6 +487,9 @@ def write_profile(path, rows) -> int:
             feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
         layer.CreateFeature(feat)
         feat = None
+        if n % WRITE_BATCH == 0:        # bound the transaction size (Windows safety)
+            ds.CommitTransaction()
+            ds.StartTransaction()
     ds.CommitTransaction()
     ds = None
     return len(rows)
@@ -526,7 +544,7 @@ def write_segments(path, rows) -> int:
     fi = _field_index(layer)  # resolve once; set by index below
     i_real = [fi[name] for name in real_names]
     ds.StartTransaction()
-    for row in rows:
+    for n, row in enumerate(rows, 1):
         feat = ogr.Feature(defn)
         _seti(feat, fi["pipe_code"], row.get("pipe_code"))
         _seti(feat, fi["source"], row.get("source"))
@@ -537,6 +555,9 @@ def write_segments(path, rows) -> int:
             feat.SetGeometry(ogr.CreateGeometryFromWkt(row["geometry_wkt"]))
         layer.CreateFeature(feat)
         feat = None
+        if n % WRITE_BATCH == 0:        # bound the transaction size (Windows safety)
+            ds.CommitTransaction()
+            ds.StartTransaction()
     ds.CommitTransaction()
     ds = None
     return len(rows)
