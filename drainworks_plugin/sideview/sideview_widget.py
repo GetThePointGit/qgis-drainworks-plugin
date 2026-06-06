@@ -160,16 +160,38 @@ class SideViewWidget(QWidget):
         c.setAlpha(120)
         return c
 
+    _WATER_LABEL = "Water (verloren berging)"
+
     def _water_legend(self, brush_color):
-        """Add a single legend entry (dashed line + filled swatch) for the water.
+        """Add the water legend entry; clicking it shows/hides the water.
 
         An empty named curve carrying ``fillBrush``/``fillLevel`` renders a filled
         sample in the legend (the FillBetweenItem itself has no legend entry) and is
-        removed by ``plot.clear()`` on the next render, so it never duplicates.
+        removed by ``plot.clear()`` on the next render, so it never duplicates. The
+        legend sample's click is rebound so it toggles the actual water (line + fill),
+        not just the invisible swatch.
         """
-        self.plot.plot([], [], pen=self._pen("water", dashed=True),
-                       fillLevel=0, fillBrush=pg.mkBrush(brush_color),
-                       name="Water (verloren berging)")
+        swatch = self.plot.plot([], [], pen=self._pen("water", dashed=True),
+                                fillLevel=0, fillBrush=pg.mkBrush(brush_color),
+                                name=self._WATER_LABEL)
+        legend = self.plot.plotItem.legend
+        if legend is None:
+            return
+        for sample, _label in list(getattr(legend, "items", [])):
+            if getattr(sample, "item", None) is swatch:
+                sample.mouseClickEvent = self._on_water_legend_click
+                break
+
+    def _on_water_legend_click(self, event=None):
+        """Toggle the water (line + fill) when its legend entry is clicked."""
+        if event is not None:
+            try:
+                event.accept()
+            except Exception:
+                pass
+        self._show_water = not getattr(self, "_show_water", True)
+        if getattr(self, "_last_profile", None) is not None:
+            self.show_profile(self._last_profile, getattr(self, "_last_water_overlay", None))
 
     def _draw_water_runs(self, dists, bobs, waters, curve_fn):
         """Fill water per maximal run of non-None ``waters``, using ``curve_fn``.

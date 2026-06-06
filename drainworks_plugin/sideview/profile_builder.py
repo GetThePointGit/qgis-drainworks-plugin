@@ -95,16 +95,20 @@ def build_profile(path, pipes: dict, measurements_by_pipe=None,
             ]
             # Anchor the line at the pipe's own end BOBs when the inspection does not
             # cover the whole pipe, so a partial/short measurement doesn't draw a
-            # straight line across the gap to the neighbouring pipe.
+            # straight line across the gap to the neighbouring pipe. The anchor carries
+            # the adjacent measured water level, so a pool extends (flat, clipped to the
+            # invert) to the pipe end instead of stopping at the last measurement.
             anchor_start = pipe.bob1 if forward else pipe.bob2
             anchor_end = pipe.bob2 if forward else pipe.bob1
             eps = 0.05  # m
             if anchor_start is not None and (not pts or pts[0].dist - span_start > eps):
-                pts.insert(0, ProfileVertex(dist=span_start, bob=anchor_start,
-                                            obb=anchor_start + diam))
+                pts.insert(0, ProfileVertex(
+                    dist=span_start, bob=anchor_start, obb=anchor_start + diam,
+                    water_level=pts[0].water_level if pts else None))
             if anchor_end is not None and (not pts or span_end - pts[-1].dist > eps):
-                pts.append(ProfileVertex(dist=span_end, bob=anchor_end,
-                                         obb=anchor_end + diam))
+                pts.append(ProfileVertex(
+                    dist=span_end, bob=anchor_end, obb=anchor_end + diam,
+                    water_level=pts[-1].water_level if pts else None))
             profile.vertices.extend(pts)
         else:
             start_bob = pipe.bob1 if forward else pipe.bob2
