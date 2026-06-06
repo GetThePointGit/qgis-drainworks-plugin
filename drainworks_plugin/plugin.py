@@ -99,17 +99,33 @@ class DrainworksPlugin:
         input_path, meas_path, gpkg_path = dialog.values()
         if not input_path:
             return
-        # Opening an existing GeoPackage is cheap (no parsing) -> load directly.
+        # Opening an existing GeoPackage is cheap (no parsing) -> load directly. It still
+        # reads the whole network/profile/segments, which is slow for a large gpkg, so
+        # show a (main-thread) loading bar driven via processEvents.
         if input_path.lower().endswith(".gpkg"):
             from drainworks_plugin.io.geopackage_store import check_base_schema
             problem = check_base_schema(input_path)
             if problem:  # incompatible/foreign gpkg -> clear message, no cryptic crash
                 self.iface.messageBar().pushCritical("Drainworks", problem)
                 return
+            from qgis.PyQt.QtWidgets import QApplication
+
+            from drainworks_plugin.ui.busy import start_progress
+
+            busy = start_progress(self.iface, "GeoPackage laden…")
+
+            def report(frac, label):
+                busy.set_progress(frac * 100)
+                busy.set_text(label)
+                QApplication.processEvents()  # repaint the bar during the blocking load
+
+            QApplication.processEvents()
             try:
-                self._load_and_show(input_path)
+                self._load_and_show(input_path, on_progress=report)
             except Exception as exc:  # surface to the user, don't crash QGIS
                 self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
+            finally:
+                busy.stop()
             return
         # Parsing RIBX/SUFRIB + writing the base GeoPackage is heavy -> run it in a
         # QgsTask (progress bar, no GUI freeze); load the layers in the callback.
@@ -152,18 +168,30 @@ class DrainworksPlugin:
         except Exception as exc:
             self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
 
-    def _load_and_show(self, gpkg_out):
-        """Load the GeoPackage layers, zoom, and hand them to the dock."""
+    def _load_and_show(self, gpkg_out, on_progress=None):
+        """Load the GeoPackage layers, zoom, and hand them to the dock.
+
+        ``on_progress(fraction, label)`` (0..1), if given, reports load progress
+        (layers → zoom → reading the data in the dock) for a loading bar.
+        """
         from drainworks_plugin.io.import_controller import load_pipeline_layers
 
+        def _p(frac, label):
+            if on_progress is not None:
+                on_progress(frac, label)
+
+        _p(0.05, "Lagen laden…")
         manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.layer_group = group
         self.gpkg_path = gpkg_out
+        _p(0.30, "Inzoomen…")
         self._zoom_to_layers([pipe_layer, manhole_layer])
         if self.dock is not None:
-            self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path)
+            # The dock reads the network/profile/segments; map its 0..1 into 0.35..1.0.
+            self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path,
+                               on_progress=lambda f, l: _p(0.35 + 0.65 * f, l))
             self.dock.show()
         self.iface.messageBar().pushSuccess(
             "Drainworks",
