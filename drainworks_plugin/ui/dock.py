@@ -823,11 +823,18 @@ class DrainworksDock(QDockWidget):
         self._commit_waypoints(push=False)
 
     def _on_ctrl_pick(self, code):
-        """Ctrl/right-click on a put: remove it from the trajectory if present."""
-        if code in self.waypoints:
+        """Right/ctrl-click: remove the clicked waypoint, or finish if clicked away.
+
+        ``code`` is the snapped put under the cursor, or None when the click is not on
+        a put. Clicking a trajectory point removes it; clicking away from one (while a
+        trajectory exists) finishes editing — the same as the "Klaar" button.
+        """
+        if code is not None and code in self.waypoints:
             self.waypoints.remove(code)
             self.active_code = self.waypoints[-1] if self.waypoints else None
             self._commit_waypoints()
+        elif self.waypoints:
+            self._on_traj_done()
 
     def _on_pick(self, code):
         """Trajectory click on a put: delete it in delete-mode, otherwise place it."""

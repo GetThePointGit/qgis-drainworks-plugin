@@ -25,31 +25,24 @@ class TrajectoryMapTool(QgsMapTool):
     def canvasReleaseEvent(self, event):  # noqa: N802 (Qt override)
         """Dispatch a click to pick, ctrl-pick or reset the nearest manhole."""
         point = self.toMapCoordinates(event.pos())
-        code = self._nearest_manhole_code(point)
-        if event.button() == Qt.RightButton:
-            # During trajectory editing (on_ctrl_pick wired) a right-click — which is
-            # also what macOS makes of Ctrl+click — removes the nearest waypoint instead
-            # of clearing everything. Other tools keep the plain reset.
-            if self.on_ctrl_pick is not None and code is not None:
-                self.on_ctrl_pick(code)
-            else:
-                self.on_reset()
-            return
-        if code is None:
-            return
+        right = event.button() == Qt.RightButton
         ctrl = bool(event.modifiers() & Qt.ControlModifier)
-        if ctrl and self.on_ctrl_pick is not None:
-            self.on_ctrl_pick(code)
-        else:
+        # During trajectory editing (on_ctrl_pick wired) a right-click — which is also
+        # what macOS makes of Ctrl+click — passes the *snapped* waypoint, or None when
+        # the click is not on a manhole, so the controller can remove a point or finish.
+        if self.on_ctrl_pick is not None and (right or (ctrl and not right)):
+            tol = self.canvas.mapUnitsPerPixel() * 18
+            self.on_ctrl_pick(self._nearest_manhole_code(point, max_dist=tol))
+            return
+        if right:
+            self.on_reset()
+            return
+        code = self._nearest_manhole_code(point)
+        if code is not None:
             self.on_pick(code)
 
-    def canvasMoveEvent(self, event):  # noqa: N802 (Qt override)
-        """Report the hovered map coordinate to ``on_move`` (if wired)."""
-        if self.on_move is not None:
-            self.on_move(self.toMapCoordinates(event.pos()))
-
-    def _nearest_manhole_code(self, point: QgsPointXY):
-        """Return the code of the nearest manhole feature to ``point``."""
+    def _nearest_manhole_code(self, point: QgsPointXY, max_dist=None):
+        """Return the nearest manhole code to ``point`` (or None beyond ``max_dist``)."""
         target = QgsGeometry.fromPointXY(point)
         nearest_code = None
         nearest_dist = float("inf")
@@ -61,4 +54,11 @@ class TrajectoryMapTool(QgsMapTool):
             if d < nearest_dist:
                 nearest_dist = d
                 nearest_code = feat["code"]
+        if max_dist is not None and nearest_dist > max_dist:
+            return None
         return nearest_code
+
+    def canvasMoveEvent(self, event):  # noqa: N802 (Qt override)
+        """Report the hovered map coordinate to ``on_move`` (if wired)."""
+        if self.on_move is not None:
+            self.on_move(self.toMapCoordinates(event.pos()))

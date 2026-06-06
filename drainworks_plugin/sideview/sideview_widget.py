@@ -162,18 +162,20 @@ class SideViewWidget(QWidget):
 
     _WATER_LABEL = "Water (verloren berging)"
 
-    def _water_legend(self, brush_color):
-        """Add the water legend entry; clicking it shows/hides the water.
+    def _water_legend(self, brush_color, active=True):
+        """Add the clickable water legend entry; clicking it shows/hides the water.
 
-        An empty named curve carrying ``fillBrush``/``fillLevel`` renders a filled
-        sample in the legend (the FillBetweenItem itself has no legend entry) and is
-        removed by ``plot.clear()`` on the next render, so it never duplicates. The
-        legend sample's click is rebound so it toggles the actual water (line + fill),
-        not just the invisible swatch.
+        Always added when there is water data (even when hidden) so it stays available
+        to toggle back on. When hidden the swatch is drawn empty and the label gets
+        "(uit)". An empty named curve renders the filled sample (the FillBetweenItem
+        itself has no legend entry) and is removed by ``plot.clear()`` each render, so
+        it never duplicates. The sample's click is rebound to toggle the actual water.
         """
+        label = self._WATER_LABEL if active else f"{self._WATER_LABEL} (uit)"
         swatch = self.plot.plot([], [], pen=self._pen("water", dashed=True),
-                                fillLevel=0, fillBrush=pg.mkBrush(brush_color),
-                                name=self._WATER_LABEL)
+                                fillLevel=0 if active else None,
+                                fillBrush=pg.mkBrush(brush_color) if active else None,
+                                name=label)
         legend = self.plot.plotItem.legend
         if legend is None:
             return
@@ -203,7 +205,6 @@ class SideViewWidget(QWidget):
         """
         brush_color = self._water_brush()
         nan = float("nan")
-        drew = False
         i, n = 0, len(dists)
         while i < n:
             if waters[i] is None:
@@ -222,9 +223,6 @@ class SideViewWidget(QWidget):
                 brush=pg.mkBrush(brush_color)))
             surf = [wv if f else nan for wv, f in zip(ww, wet)]
             self.plot.plot(xs, surf, pen=self._pen("water", dashed=True), connect="finite")
-            drew = True
-        if drew:
-            self._water_legend(brush_color)
 
     def _add_water_fill_aligned(self, dists, bobs, water_levels):
         """Fill per-point water as flat pools with shores (accurate berging)."""
@@ -283,12 +281,17 @@ class SideViewWidget(QWidget):
 
         # Water (verloren berging), toggleable. Per-point water (accurate) draws flat
         # pools; otherwise the segment-midpoint overlay draws an interpolated surface.
-        if getattr(self, "_show_water", True):
-            if any(v.water_level is not None for v in profile.vertices):
-                self._add_water_fill_aligned(
-                    dists, bobs, [v.water_level for v in profile.vertices])
-            elif water_overlay:
-                self._add_water_overlay(dists, bobs, water_overlay)
+        has_water = any(v.water_level is not None for v in profile.vertices) or bool(water_overlay)
+        if has_water:
+            active = getattr(self, "_show_water", True)
+            if active:
+                if any(v.water_level is not None for v in profile.vertices):
+                    self._add_water_fill_aligned(
+                        dists, bobs, [v.water_level for v in profile.vertices])
+                elif water_overlay:
+                    self._add_water_overlay(dists, bobs, water_overlay)
+            # Always keep the clickable legend entry so the water can be toggled back on.
+            self._water_legend(self._water_brush(), active=active)
 
         # Each put: a solid green invert->maaiveld line, plus a thin light full-height
         # line carrying the put code as a vertical label. Both stay out of auto-zoom.
