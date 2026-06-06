@@ -13,6 +13,7 @@ from drainworks_plugin.styling import views as v
 
 
 def _combo(options, current):
+    """Build a combo from ``(label, mode)`` options, selecting ``current``."""
     box = QComboBox()
     for label, mode in options:
         box.addItem(label, mode)
@@ -37,6 +38,9 @@ class StyleDialog(QDialog):
                      ("Maaiveld", v.MANHOLE_COLOR_GROUND)]
     MANHOLE_LABEL = [("Niet", v.MANHOLE_LABEL_NONE), ("Code", v.MANHOLE_LABEL_CODE),
                      ("Bodemhoogte", v.MANHOLE_LABEL_BOTTOM), ("Maaiveld", v.MANHOLE_LABEL_GROUND)]
+    SEGMENT_COLOR = [("Vullingsgraad", v.SEGMENT_COLOR_FLOODED),
+                     ("Waterhoogte", v.SEGMENT_COLOR_WATER),
+                     ("Max. waterdiepte", v.SEGMENT_COLOR_DEPTH)]
 
     def __init__(self, current, parent=None):
         super().__init__(parent)
@@ -61,16 +65,24 @@ class StyleDialog(QDialog):
         mh_form.addRow("Label:", self.mh_label)
         layout.addLayout(mh_form)
 
+        layout.addWidget(QLabel("<b>Segmenten</b>"))
+        seg_form = QFormLayout()
+        self.segment_color = _combo(self.SEGMENT_COLOR, current.get("segment_color"))
+        seg_form.addRow("Kleur op:", self.segment_color)
+        layout.addLayout(seg_form)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     def values(self):
+        """Return the chosen styling modes as a dict keyed by layer/aspect."""
         return {
             "pipe_color": self.pipe_color.currentData(),
             "pipe_width": self.pipe_width.currentData(),
             "pipe_label": self.pipe_label.currentData(),
             "manhole_color": self.mh_color.currentData(),
             "manhole_label": self.mh_label.currentData(),
+            "segment_color": self.segment_color.currentData(),
         }

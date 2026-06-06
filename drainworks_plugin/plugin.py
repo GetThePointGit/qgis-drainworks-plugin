@@ -23,6 +23,8 @@ class DrainworksPlugin:
         self.pipe_layer = None
         self.layer_group = None
         self.gpkg_path = None
+        self._import_task = None  # keeps the running ImportTask alive
+        self._busy = None         # the messageBar busy item, if any
 
     def initGui(self):  # noqa: N802 (QGIS-required name)
         """Create the toolbar toggle and the (hidden) dock. Called on load."""
@@ -43,6 +45,7 @@ class DrainworksPlugin:
         self.iface.addPluginToMenu(self.menu, self.action)
 
     def _on_dock_visibility(self, visible):
+        """Keep the toolbar toggle in sync; deactivate the tool when hidden."""
         self.action.setChecked(visible)
         if not visible:
             self.dock.deactivate_tool()
@@ -67,60 +70,114 @@ class DrainworksPlugin:
             self.toolbar = None
 
     # ------------------------------------------------------------- actions
+    def reload_pipeline_layers(self):
+        """Reload + restyle the GeoPackage layers (after enrich/berging)."""
+        if not self.gpkg_path:
+            return
+        from drainworks_plugin.io.import_controller import load_pipeline_layers
+        manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(self.gpkg_path)
+        self.manhole_layer = manhole_layer
+        self.pipe_layer = pipe_layer
+        self.layer_group = group
+        if self.dock is not None:
+            self.dock.manhole_layer = manhole_layer
+            self.dock.pipe_layer = pipe_layer
+        self.iface.mapCanvas().refresh()
+
     def on_import(self):
         """Open the import dialog, import the file, and feed the dock."""
         from qgis.PyQt.QtWidgets import QDialog
 
-        from drainworks_plugin.io.import_controller import (
-            import_ribx,
-            import_sufrib,
-            load_geopackage_layers,
-        )
         from drainworks_plugin.ui.import_dialog import ImportDialog
 
+        if self._import_task is not None:  # an import is already running
+            self.iface.messageBar().pushInfo("Drainworks", "Er loopt al een import.")
+            return
         dialog = ImportDialog(self.iface.mainWindow())
         if dialog.exec_() != QDialog.Accepted:
             return
-        input_path, meas_path, gpkg_path, correct_bob = dialog.values()
+        input_path, meas_path, gpkg_path = dialog.values()
         if not input_path:
             return
-        lower = input_path.lower()
-        try:
-            if lower.endswith(".gpkg"):
-                manhole_layer, pipe_layer, group = load_geopackage_layers(input_path)
-            elif lower.endswith((".rib", ".hel")):
-                manhole_layer, pipe_layer, group = import_sufrib(
-                    input_path, meas_path or None, gpkg_path, correct_bob=correct_bob
-                )
-            else:
-                manhole_layer, pipe_layer, group = import_ribx(
-                    input_path, gpkg_path, correct_bob=correct_bob
-                )
-        except Exception as exc:  # surface to the user, don't crash QGIS
-            self.iface.messageBar().pushCritical("Drainworks", f"Import failed: {exc}")
+        # Opening an existing GeoPackage is cheap (no parsing) -> load directly.
+        if input_path.lower().endswith(".gpkg"):
+            from drainworks_plugin.io.geopackage_store import check_base_schema
+            problem = check_base_schema(input_path)
+            if problem:  # incompatible/foreign gpkg -> clear message, no cryptic crash
+                self.iface.messageBar().pushCritical("Drainworks", problem)
+                return
+            try:
+                self._load_and_show(input_path)
+            except Exception as exc:  # surface to the user, don't crash QGIS
+                self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
             return
+        # Parsing RIBX/SUFRIB + writing the base GeoPackage is heavy -> run it in a
+        # QgsTask (progress bar, no GUI freeze); load the layers in the callback.
+        from qgis.core import QgsApplication
+
+        from drainworks_plugin.pipeline.tasks import ImportTask
+
+        from drainworks_plugin.ui.busy import bind_progress, start_progress
+
+        self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
+                                       on_done=self._import_done)
+        self._busy = start_progress(self.iface, "Importeren…")
+        bind_progress(self._import_task, self._busy)  # live %/label per stage
+        QgsApplication.taskManager().addTask(self._import_task)
+
+    def _import_done(self, task):
+        """Main-thread callback after the import task finishes.
+
+        Defers the message-bar + layer-loading work one event-loop tick out of the
+        ``QgsTask.finished()`` call stack: mutating the QGIS message bar from inside
+        ``finished()`` can corrupt its widget state and crash QGIS.
+        """
+        from qgis.PyQt.QtCore import QTimer
+
+        error = task.error
+        result = None if error is not None else str(task.result)
+        QTimer.singleShot(0, lambda: self._import_finalize(error, result))
+
+    def _import_finalize(self, error, gpkg_out):
+        """Stop the busy bar, then load the layers or report the error (off-stack)."""
+        if self._busy is not None:
+            self._busy.stop()
+        self._busy = None
+        self._import_task = None
+        if error is not None:
+            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {error}")
+            return
+        try:
+            self._load_and_show(gpkg_out)
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
+
+    def _load_and_show(self, gpkg_out):
+        """Load the GeoPackage layers, zoom, and hand them to the dock."""
+        from drainworks_plugin.io.import_controller import load_pipeline_layers
+
+        manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.layer_group = group
-        self.gpkg_path = input_path if input_path.lower().endswith(".gpkg") else gpkg_path
+        self.gpkg_path = gpkg_out
         self._zoom_to_layers([pipe_layer, manhole_layer])
         if self.dock is not None:
             self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path)
             self.dock.show()
         self.iface.messageBar().pushSuccess(
             "Drainworks",
-            f"Imported {pipe_layer.featureCount()} pipes, "
-            f"{manhole_layer.featureCount()} manholes.",
+            f"Geïmporteerd: {pipe_layer.featureCount()} leidingen, "
+            f"{manhole_layer.featureCount()} putten.",
         )
 
     def _zoom_to_layers(self, layers):
         """Zoom the canvas to the combined extent of ``layers`` (CRS-aware)."""
         from qgis.core import QgsCoordinateTransform, QgsProject, QgsRectangle
 
-        extent = QgsRectangle()
-        extent.setMinimal()
         project = QgsProject.instance()
         dst_crs = project.crs()
+        extent = None
         for layer in layers:
             if layer is None or layer.featureCount() == 0:
                 continue
@@ -128,38 +185,14 @@ class DrainworksPlugin:
             if layer.crs() != dst_crs:
                 xform = QgsCoordinateTransform(layer.crs(), dst_crs, project)
                 layer_extent = xform.transformBoundingBox(layer_extent)
-            extent.combineExtentWith(layer_extent)
-        if extent.isNull() or extent.isEmpty():
+            if extent is None:
+                extent = QgsRectangle(layer_extent)
+            else:
+                extent.combineExtentWith(layer_extent)
+        if extent is None or extent.isNull() or extent.isEmpty():
             return
         extent.scale(1.1)  # small margin around the network
         canvas = self.iface.mapCanvas()
         canvas.setExtent(extent)
         canvas.refresh()
 
-    def on_compute_loss(self, correct_bob=False):
-        """Compute lost capacity and load the styled measurements layer."""
-        if self.gpkg_path is None:
-            self.iface.messageBar().pushWarning("Drainworks", "Import data first.")
-            return
-        from qgis.core import QgsVectorLayer
-
-        from drainworks_plugin.io.import_controller import add_layer_to_group
-        from drainworks_plugin.lostcapacity.runner import compute_and_store
-        from drainworks_plugin.styling.symbology import style_berging_lines
-
-        try:
-            n = compute_and_store(self.gpkg_path, correct_bob=correct_bob)
-        except Exception as exc:
-            self.iface.messageBar().pushCritical("Drainworks", f"Computation failed: {exc}")
-            return
-
-        # Replace any previous berging layer, then load the aggregated lines.
-        from qgis.core import QgsProject
-
-        for lyr in QgsProject.instance().mapLayersByName("Verloren berging"):
-            QgsProject.instance().removeMapLayer(lyr.id())
-        layer = QgsVectorLayer(f"{self.gpkg_path}|layername=berging", "Verloren berging", "ogr")
-        if layer.isValid():
-            style_berging_lines(layer)
-            add_layer_to_group(layer, self.layer_group, on_top=True)
-        self.iface.messageBar().pushSuccess("Drainworks", f"Verloren berging berekend ({n} punten).")

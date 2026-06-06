@@ -9,7 +9,6 @@ import os
 
 from qgis.core import QgsSettings
 from qgis.PyQt.QtWidgets import (
-    QCheckBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -41,7 +40,7 @@ class ImportDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Drainworks — import sewer data")
+        self.setWindowTitle("Drainworks — rioolgegevens importeren")
         self.input_path = QLineEdit()
         self.meas_path = QLineEdit()
         self.output_path = QLineEdit()
@@ -54,17 +53,9 @@ class ImportDialog(QDialog):
         layout.addWidget(QLabel("Doel-GeoPackage (wordt aangemaakt/overschreven):"))
         layout.addLayout(self._row(self.output_path, self._browse_output))
 
-        self.correct_bob = QCheckBox("Corrigeer BOB-metingen")
-        self.correct_bob.setToolTip(
-            "Corrigeer de hoogte van de gemeten punten op basis van de BOB van begin "
-            "en eind van de leiding (verwijdert drift in hellingmetingen)."
-        )
-        self.correct_bob.setChecked(True)
-        layout.addWidget(self.correct_bob)
-
         buttons = QHBoxLayout()
-        ok = QPushButton("Import")
-        cancel = QPushButton("Cancel")
+        ok = QPushButton("Importeren")
+        cancel = QPushButton("Annuleren")
         ok.clicked.connect(self.accept)
         cancel.clicked.connect(self.reject)
         buttons.addWidget(ok)
@@ -72,14 +63,16 @@ class ImportDialog(QDialog):
         layout.addLayout(buttons)
 
     def _row(self, line_edit, handler):
+        """Build a line-edit + "Bladeren…" button row wired to ``handler``."""
         row = QHBoxLayout()
-        browse = QPushButton("Browse…")
+        browse = QPushButton("Bladeren…")
         browse.clicked.connect(handler)
         row.addWidget(line_edit)
         row.addWidget(browse)
         return row
 
     def _browse_input(self):
+        """Pick the input file; remember its dir and suggest an output path."""
         start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         path, _ = QFileDialog.getOpenFileName(
             self, "Selecteer bestand", start_dir,
@@ -93,6 +86,7 @@ class ImportDialog(QDialog):
                 self.output_path.setText(base + ".gpkg")
 
     def _browse_meas(self):
+        """Pick the optional measurement file (.hel / .rmb)."""
         start_dir = _remembered_dir(SETTINGS_INPUT_DIR)
         if not start_dir and self.input_path.text():
             start_dir = os.path.dirname(self.input_path.text())
@@ -103,16 +97,17 @@ class ImportDialog(QDialog):
             self.meas_path.setText(path)
 
     def _browse_output(self):
+        """Pick the target GeoPackage path and remember its directory."""
         # Prefer the remembered target dir; fall back to the chosen input's dir.
         start_dir = _remembered_dir(SETTINGS_TARGET_DIR)
         if not start_dir and self.input_path.text():
             start_dir = os.path.dirname(self.input_path.text())
-        path, _ = QFileDialog.getSaveFileName(self, "Target GeoPackage", start_dir, "GeoPackage (*.gpkg)")
+        path, _ = QFileDialog.getSaveFileName(self, "Doel-GeoPackage", start_dir, "GeoPackage (*.gpkg)")
         if path:
             self.output_path.setText(path)
             _remember_dir(SETTINGS_TARGET_DIR, path)
 
     def values(self):
-        """Return (input_path, measurement_path, output_gpkg_path, correct_bob)."""
+        """Return (input_path, measurement_path, output_gpkg_path)."""
         return (self.input_path.text(), self.meas_path.text(),
-                self.output_path.text(), self.correct_bob.isChecked())
+                self.output_path.text())

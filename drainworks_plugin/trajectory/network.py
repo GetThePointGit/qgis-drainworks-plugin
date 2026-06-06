@@ -34,6 +34,9 @@ class SewerNetwork:
             self._adj[pipe.manhole2].append((pipe.manhole1, pipe.code, weight))
             self._bob_adj[pipe.manhole1].append((pipe.manhole2, pipe.bob1, pipe.bob2))
             self._bob_adj[pipe.manhole2].append((pipe.manhole1, pipe.bob2, pipe.bob1))
+        # Dijkstra results are memoised: the graph is immutable after construction, so
+        # repeated route/hover queries (placement, side-view) reuse cached paths.
+        self._path_cache = {}
 
     def downstream_path(self, start: str, max_steps=10000) -> list:
         """Trace downstream from ``start``, always taking the lowest descending pipe.
@@ -61,7 +64,23 @@ class SewerNetwork:
         return path
 
     def shortest_path(self, start: str, end: str) -> Path:
-        """Dijkstra shortest path from ``start`` to ``end`` manhole."""
+        """Dijkstra shortest path from ``start`` to ``end`` manhole (memoised)."""
+        key = (start, end)
+        if key in self._path_cache:
+            cached = self._path_cache[key]
+            if cached is None:
+                raise ValueError(f"No path from {start} to {end}")
+            return cached
+        try:
+            path = self._shortest_path_uncached(start, end)
+        except ValueError:
+            self._path_cache[key] = None
+            raise
+        self._path_cache[key] = path
+        return path
+
+    def _shortest_path_uncached(self, start: str, end: str) -> Path:
+        """Compute the Dijkstra shortest path without consulting the cache."""
         if start not in self._adj:
             raise ValueError(f"Unknown manhole: {start}")
         dist = {start: 0.0}

@@ -1,13 +1,17 @@
 [general]
 name=Drainworks
 qgisMinimumVersion=3.22
-description=Import RIBX/GeoPackage sewer data, compute lost storage, show side-views.
-version=0.1.0
+description=Import RIBX/SUFRIB/GeoPackage sewer data, compute lost storage (verloren berging), and explore it in a longitudinal side-view.
+version=1.0.0
 author=Bastiaan Roos
 email=bastiaan@roosgeo.nl
-about=Import Dutch sewer inspection data (RIBX or GeoPackage), display it on the map, compute "verloren berging" (lost storage capacity), and view longitudinal profiles along a chosen trajectory.
-tracker=https://github.com/GetThePoint/qgis-drainworks-plugin/issues
-repository=https://github.com/GetThePoint/qgis-drainworks-plugin
-experimental=True
+about=Import Dutch sewer inspection data (RIBX, classic SUFRIB .rib/.hel/.rmb, or a GeoPackage), display it on the map, and run a three-step pipeline: enrich the base data (validate, compute heights, build segments) and compute the lost storage capacity ("verloren berging") for chosen outflow points (sinks). Pick a trajectory through the network and inspect the longitudinal profile (BOB, water level, maaiveld) in an embedded side-view.
+tracker=https://github.com/GetThePointGit/qgis-drainworks-plugin/issues
+repository=https://github.com/GetThePointGit/qgis-drainworks-plugin
+homepage=https://github.com/GetThePointGit/qgis-drainworks-plugin
+hasProcessingProvider=no
+tags=sewer,riool,RIBX,SUFRIB,hydraulics,verloren berging,Netherlands,NEN 13508
+experimental=False
 deprecated=False
 icon=resources/logo.png
+changelog=1.0.0 First public release: three-step pipeline (import / enrich / lost storage), trajectory tool with live side-view, segment styling, GeoPackage metadata with up-to-date detection.
