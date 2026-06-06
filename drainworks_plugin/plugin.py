@@ -90,6 +90,9 @@ class DrainworksPlugin:
 
         from drainworks_plugin.ui.import_dialog import ImportDialog
 
+        if self._import_task is not None:  # an import is already running
+            self.iface.messageBar().pushInfo("Drainworks", "Er loopt al een import.")
+            return
         dialog = ImportDialog(self.iface.mainWindow())
         if dialog.exec_() != QDialog.Accepted:
             return

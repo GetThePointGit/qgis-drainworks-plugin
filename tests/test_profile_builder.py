@@ -71,6 +71,20 @@ def test_partial_measurements_anchored_to_pipe_ends():
     assert any(v.dist == pytest.approx(30.0) for v in profile.vertices)
 
 
+def test_partial_measurement_anchors_inherit_adjacent_water_level():
+    # Anchors at the pipe ends carry the adjacent measured water level, so a pool can
+    # extend (flat, clipped to the invert) to the pipe end instead of stopping short.
+    pipes = {"L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-3.0, length=40.0)}
+    path = Path(manholes=["P1", "P2"], pipe_codes=["L1"], total_length=40.0)
+    measured = [{"dist": 30.0, "bob": -2.7, "obb": -2.4, "water_level": -2.5},
+                {"dist": 38.0, "bob": -2.9, "obb": -2.6, "water_level": -2.6}]
+
+    profile = build_profile(path, pipes, measurements_by_pipe={"L1": measured})
+
+    assert profile.vertices[0].water_level == pytest.approx(-2.5)   # start anchor
+    assert profile.vertices[-1].water_level == pytest.approx(-2.6)  # end anchor
+
+
 def test_full_measurements_not_double_anchored():
     # Measurements already reach both ends -> no extra anchor vertices.
     pipes = {"L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-3.0, length=40.0)}

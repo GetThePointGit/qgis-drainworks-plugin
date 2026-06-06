@@ -582,6 +582,9 @@ class DrainworksDock(QDockWidget):
 
         from drainworks_plugin.ui.busy import bind_progress, start_progress
 
+        if self.active_task is not None:  # don't orphan a running task's busy bar
+            self.iface.messageBar().pushInfo("Drainworks", "Er loopt al een berekening.")
+            return
         self.active_task = task
         self._busy = start_progress(self.iface, task.description() + "…")
         bind_progress(task, self._busy)  # live %/label per stage
