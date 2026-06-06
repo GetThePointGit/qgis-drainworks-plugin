@@ -16,7 +16,8 @@ def test_route_berging_builds_water_line_and_volume():
     ]}
     water, volume = route_berging(route, pipes, segments_by_pipe)
     assert round(volume, 2) == 0.8
-    assert water[0][0] == 0.0 and water[-1][0] == 30.0
+    # one point per segment, at the segment midpoint
+    assert [round(d, 1) for d, _ in water] == [7.5, 22.5]
     assert any(abs(level - (-2.1)) < 1e-9 for _d, level in water)
 
 

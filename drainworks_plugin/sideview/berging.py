@@ -10,8 +10,9 @@ are mirrored when the route traverses the pipe backwards.
 def route_berging(route, pipes, segments_by_pipe):
     """Return ``(water_points, total_volume)`` for ``route``.
 
-    ``water_points`` is ``[(cumulative_dist, water_level)]`` (two points per
-    segment that has a water level). ``total_volume`` sums every segment's
+    ``water_points`` is ``[(cumulative_dist, water_level)]`` with **one point at the
+    middle of each segment** that has a water level; the side-view interpolates the
+    surface between consecutive midpoints. ``total_volume`` sums every segment's
     ``lost_volume`` over the route's pipes.
     """
     water = []
@@ -31,8 +32,7 @@ def route_berging(route, pipes, segments_by_pipe):
             d0, d1 = seg["dist_from"], seg["dist_to"]
             a = d0 if forward else (length - d1)
             b = d1 if forward else (length - d0)
-            water.append((cumulative + a, level))
-            water.append((cumulative + b, level))
+            water.append((cumulative + (a + b) / 2.0, level))   # segment midpoint
         cumulative += length
     water.sort(key=lambda p: p[0])
     return water, total_volume

@@ -39,6 +39,45 @@ def _shoreline_curves(dists, bobs, waters):
     return xs, bb, ww, wet
 
 
+def _clip_curves(dists, bobs, waters):
+    """Return ``(xs, bobs, waters, wet)`` clipping a sloped water surface to the invert.
+
+    Unlike :func:`_shoreline_curves` the surface is kept as given (a sloped
+    interpolation), only clamped to ``>= bobs``; a crossing point is inserted where the
+    surface meets the invert so the fill drops to zero there. Used by the segment
+    overlay (interpolated between segment midpoints).
+    """
+    eps = 1e-9
+    xs, bb, ww, wet = [], [], [], []
+    for i in range(len(dists)):
+        if i > 0:
+            d0, b0, w0 = dists[i - 1], bobs[i - 1], waters[i - 1]
+            d1, b1, w1 = dists[i], bobs[i], waters[i]
+            f0, f1 = w0 - b0, w1 - b1                    # water depth
+            if (f0 > eps) != (f1 > eps) and (f0 - f1) != 0:
+                t = f0 / (f0 - f1)
+                xs.append(d0 + t * (d1 - d0))
+                yc = b0 + t * (b1 - b0)
+                bb.append(yc); ww.append(yc); wet.append(True)
+        w = max(waters[i], bobs[i])
+        xs.append(dists[i]); bb.append(bobs[i]); ww.append(w)
+        wet.append(w - bobs[i] > eps)
+    return xs, bb, ww, wet
+
+
+def _interp(x, xs, ys):
+    """Linear interpolation of ``ys`` at ``x`` over sorted ``xs`` (clamped to the ends)."""
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    import bisect
+    k = bisect.bisect_right(xs, x)
+    x0, x1, y0, y1 = xs[k - 1], xs[k], ys[k - 1], ys[k]
+    t = 0.0 if x1 == x0 else (x - x0) / (x1 - x0)
+    return y0 + t * (y1 - y0)
+
+
 class SideViewWidget(QWidget):
     """Plots a :class:`Profile` (from profile_builder.build_profile)."""
 
@@ -132,40 +171,30 @@ class SideViewWidget(QWidget):
                        fillLevel=0, fillBrush=pg.mkBrush(brush_color),
                        name="Water (verloren berging)")
 
-    def _add_water_fill(self, bob_dists, bobs, water_dists, water_levels):
-        """Fill (verloren berging) between the invert and the water-level curves."""
-        bob_curve = pg.PlotCurveItem(bob_dists, bobs)
-        water_curve = pg.PlotCurveItem(water_dists, water_levels)
-        brush_color = self._water_brush()
-        self.plot.addItem(pg.FillBetweenItem(bob_curve, water_curve, brush=pg.mkBrush(brush_color)))
-        self.plot.plot(water_dists, water_levels, pen=self._pen("water", dashed=True))
-        self._water_legend(brush_color)
+    def _draw_water_runs(self, dists, bobs, waters, curve_fn):
+        """Fill water per maximal run of non-None ``waters``, using ``curve_fn``.
 
-    def _add_water_fill_aligned(self, dists, bobs, water_levels):
-        """Fill water as flat pools with shores, per run of measured points.
-
-        ``water_levels`` is the per-vertex water level with ``None`` where the vertex
-        has no measurement (e.g. a pipe-end anchor). Each maximal run of consecutive
-        non-None vertices is filled on its own, so the water never bridges the
-        unmeasured gap of a partially-measured pipe. Within a run, shore points keep
-        the surface flat across each pool (see :func:`_shoreline_curves`).
+        Each run is filled on its own, so water never bridges a gap (``None`` water,
+        e.g. a pipe-end anchor or outside the overlay span). ``curve_fn`` builds the
+        fill curves for a run: :func:`_shoreline_curves` (flat pools, per-point water)
+        or :func:`_clip_curves` (a sloped interpolated surface, the segment overlay).
         """
         brush_color = self._water_brush()
         nan = float("nan")
         drew = False
         i, n = 0, len(dists)
         while i < n:
-            if water_levels[i] is None:
+            if waters[i] is None:
                 i += 1
                 continue
             j = i
-            while j < n and water_levels[j] is not None:
+            while j < n and waters[j] is not None:
                 j += 1
-            d, b, w = dists[i:j], bobs[i:j], water_levels[i:j]
+            d, b, w = dists[i:j], bobs[i:j], waters[i:j]
             i = j
             if len(d) < 2 or not any(wl > bv + 1e-9 for wl, bv in zip(w, b)):
                 continue
-            xs, bb, ww, wet = _shoreline_curves(d, b, w)
+            xs, bb, ww, wet = curve_fn(d, b, w)
             self.plot.addItem(pg.FillBetweenItem(
                 pg.PlotCurveItem(xs, bb), pg.PlotCurveItem(xs, ww),
                 brush=pg.mkBrush(brush_color)))
@@ -175,10 +204,36 @@ class SideViewWidget(QWidget):
         if drew:
             self._water_legend(brush_color)
 
-    def show_profile(self, profile) -> None:
-        """Render a Profile."""
+    def _add_water_fill_aligned(self, dists, bobs, water_levels):
+        """Fill per-point water as flat pools with shores (accurate berging)."""
+        self._draw_water_runs(dists, bobs, water_levels, _shoreline_curves)
+
+    def _add_water_overlay(self, dists, bobs, water_points):
+        """Fill the segment overlay: one level per segment midpoint, interpolated.
+
+        ``water_points`` is ``[(dist, level)]`` (segment midpoints). The surface is the
+        straight interpolation between consecutive midpoints, clamped to the invert; no
+        water is drawn before the first or after the last midpoint. The fill is built on
+        a grid combining the midpoints with the invert vertices inside the span, so it
+        works even where the invert has few vertices (e.g. an unmeasured pipe).
+        """
+        if not water_points:
+            return
+        wx = [d for d, _ in water_points]
+        wy = [lv for _, lv in water_points]
+        lo, hi = wx[0], wx[-1]
+        if hi <= lo:
+            return
+        grid = sorted(set(wx) | {d for d in dists if lo <= d <= hi})
+        b = [_interp(x, dists, bobs) for x in grid]
+        w = [_interp(x, wx, wy) for x in grid]
+        self._draw_water_runs(grid, b, w, _clip_curves)
+
+    def show_profile(self, profile, water_overlay=None) -> None:
+        """Render a Profile (with an optional segment-midpoint water overlay)."""
         self.plot.clear()
         self._last_profile = profile
+        self._last_water_overlay = water_overlay
 
         dists = [v.dist for v in profile.vertices]
         bobs = [v.bob for v in profile.vertices]
@@ -204,12 +259,14 @@ class SideViewWidget(QWidget):
         self.plot.plot(dists, bobs, pen=self._pen("bob"), name="BOB gemeten",
                        skipFiniteCheck=True, **marker_kw)
 
-        # Water-level fill (verloren berging) where water_level is set — drawn as flat
-        # pools with shore points so it doesn't slope into dry stretches. Toggleable.
-        if getattr(self, "_show_water", True) and \
-                any(v.water_level is not None for v in profile.vertices):
-            water_levels = [v.water_level for v in profile.vertices]  # None preserved
-            self._add_water_fill_aligned(dists, bobs, water_levels)
+        # Water (verloren berging), toggleable. Per-point water (accurate) draws flat
+        # pools; otherwise the segment-midpoint overlay draws an interpolated surface.
+        if getattr(self, "_show_water", True):
+            if any(v.water_level is not None for v in profile.vertices):
+                self._add_water_fill_aligned(
+                    dists, bobs, [v.water_level for v in profile.vertices])
+            elif water_overlay:
+                self._add_water_overlay(dists, bobs, water_overlay)
 
         # Each put: a solid green invert->maaiveld line, plus a thin light full-height
         # line carrying the put code as a vertical label. Both stay out of auto-zoom.
@@ -267,16 +324,4 @@ class SideViewWidget(QWidget):
                 legend.setColumnCount(8 if settings.legend_position == "below" else 1)
             legend.setBrush(pg.mkBrush(255, 255, 255, 220) if settings.legend_white_bg else None)
         if getattr(self, "_last_profile", None) is not None:
-            self.show_profile(self._last_profile)
-
-    def show_water(self, water_points):
-        """Draw the verloren-berging water fill from [(dist, level)] points."""
-        if not water_points or getattr(self, "_last_profile", None) is None:
-            return
-        verts = self._last_profile.vertices
-        if not verts:
-            return
-        dists = [v.dist for v in verts]
-        bobs = [v.bob for v in verts]
-        self._add_water_fill(dists, bobs, [d for d, _ in water_points],
-                             [lvl for _, lvl in water_points])
+            self.show_profile(self._last_profile, getattr(self, "_last_water_overlay", None))

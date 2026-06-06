@@ -567,8 +567,11 @@ class DrainworksDock(QDockWidget):
             f"Totaal verloren berging: {total_lost_volume(self.gpkg_path):.2f} m³")
         self.plugin.reload_pipeline_layers()
         self._segments_by_pipe = self._read_segments_by_pipe()
+        # Re-read the profile so the side-view picks up the per-point water levels
+        # written by an accurate berging (otherwise it falls back to the segment
+        # overlay and shows water "per half metre"). _reload_profile rebuilds too.
+        self._reload_profile()
         self._refresh_step_buttons()
-        self._rebuild()
         self.active_task = None
         self.iface.messageBar().pushSuccess(
             "Drainworks", f"Verloren berging berekend ({result} segmenten).")
@@ -1000,17 +1003,16 @@ class DrainworksDock(QDockWidget):
         measurements = {c: m for c, m in self.measurements_by_pipe.items() if c in committed_codes}
         profile = build_profile(route, self.pipes_by_code, measurements,
                                 manholes_by_code=self._manholes_by_code)
-        self.side_view.show_profile(profile)
         self.route_polyline = self._build_route_polyline(route)
         if committed_route is None:
+            self.side_view.show_profile(profile)
             self.volume_label.setText("")
             return
         from drainworks_plugin.sideview.berging import route_berging
         water, volume = route_berging(committed_route, self.pipes_by_code, self._segments_by_pipe)
-        # Accurate berging carries per-point water on the profile (show_profile draws
-        # it); only draw the segment overlay when there is no per-point water (fast).
-        if not any(v.water_level is not None for v in profile.vertices):
-            self.side_view.show_water(water)
+        # The side-view draws per-point water (accurate) when the profile carries it,
+        # otherwise the segment-midpoint overlay `water`; it owns the show/hide toggle.
+        self.side_view.show_profile(profile, water_overlay=water)
         self.volume_label.setText(f"Verloren berging: {volume:.2f} m³" if volume else "")
 
     def _read_segments_by_pipe(self):

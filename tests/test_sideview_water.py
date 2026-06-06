@@ -2,7 +2,27 @@
 
 import pytest
 
-from drainworks_plugin.sideview.sideview_widget import _shoreline_curves
+from drainworks_plugin.sideview.sideview_widget import (
+    _clip_curves, _interp, _shoreline_curves)
+
+
+def test_interp_linear_and_clamped():
+    xs, ys = [0.0, 10.0, 20.0], [-2.0, -2.5, -2.1]
+    assert _interp(-5, xs, ys) == -2.0          # clamped low
+    assert _interp(25, xs, ys) == -2.1          # clamped high
+    assert abs(_interp(5, xs, ys) - (-2.25)) < 1e-9   # halfway 0..10
+
+
+def test_clip_curves_keeps_slope_and_clamps():
+    # A sloped surface from -1 down to -3 over a flat invert at -2: wet on the left,
+    # dry on the right, with a crossing at the midpoint.
+    dists = [0.0, 2.0]
+    bobs = [-2.0, -2.0]
+    waters = [-1.0, -3.0]
+    xs, bb, ww, wet = _clip_curves(dists, bobs, waters)
+    assert any(abs(x - 1.0) < 1e-6 for x in xs)        # crossing where surface hits invert
+    assert all(w >= b - 1e-9 for b, w in zip(bb, ww))  # clamped to invert
+    assert wet[0] is True and wet[-1] is False
 
 
 def test_flat_pool_unchanged():
