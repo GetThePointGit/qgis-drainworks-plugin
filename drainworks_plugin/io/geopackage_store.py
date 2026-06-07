@@ -610,6 +610,7 @@ def update_segments_berging(path, by_fid) -> int:
     fi = _field_index(layer)
     idxs = [(name, fi[name]) for name in SEGMENT_BERGING_FIELDS]
     ds.StartTransaction()
+    n = 0
     for fid, values in by_fid.items():
         feat = layer.GetFeature(fid)
         if feat is None:
@@ -618,6 +619,10 @@ def update_segments_berging(path, by_fid) -> int:
             _seti(feat, idx, values.get(name))
         layer.SetFeature(feat)
         feat = None
+        n += 1
+        if n % WRITE_BATCH == 0:        # bound the transaction size (Windows safety)
+            ds.CommitTransaction()
+            ds.StartTransaction()
     ds.CommitTransaction()
     ds = None
     return len(by_fid)
