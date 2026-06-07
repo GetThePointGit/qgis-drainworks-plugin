@@ -2,7 +2,7 @@
 name=Drainworks
 qgisMinimumVersion=3.22
 description=Import RIBX/SUFRIB/GeoPackage sewer data, compute lost storage (verloren berging), and explore it in a longitudinal side-view.
-version=1.0.0
+version=1.0.2
 author=Bastiaan Roos
 email=bastiaan@roosgeo.nl
 about=Import Dutch sewer inspection data (RIBX, classic SUFRIB .rib/.hel/.rmb, or a GeoPackage), display it on the map, and run a three-step pipeline: enrich the base data (validate, compute heights, build segments) and compute the lost storage capacity ("verloren berging") for chosen outflow points (sinks). Pick a trajectory through the network and inspect the longitudinal profile (BOB, water level, maaiveld) in an embedded side-view.
@@ -14,4 +14,9 @@ tags=sewer,riool,RIBX,SUFRIB,hydraulics,verloren berging,Netherlands,NEN 13508
 experimental=False
 deprecated=False
 icon=resources/logo.png
-changelog=1.0.0 First public release: three-step pipeline (import / enrich / lost storage), trajectory tool with live side-view, segment styling, GeoPackage metadata with up-to-date detection.
+changelog=
+    1.0.2
+    - Fix: importing a large RIBX crashed on Windows while finalising the GeoPackage; the GeoPackage is now written on the main thread (and committed in batches, faster everywhere).
+    - New: a loading bar when opening a GeoPackage.
+    1.0.0
+    - First public release: three-step pipeline (import / enrich / lost storage), trajectory tool with live side-view, segment styling, GeoPackage metadata with up-to-date detection.
