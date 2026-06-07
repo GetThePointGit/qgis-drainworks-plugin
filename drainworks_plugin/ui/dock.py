@@ -1098,8 +1098,16 @@ class DrainworksDock(QDockWidget):
             self.side_view.show_profile(profile)
             self.volume_label.setText("")
             return
+        # Live preview: pipes that exist only in the preview (not yet committed) must show
+        # no water — just the BOB line. Strip water on their spans (including the junction
+        # boundary) so the committed pool doesn't extend across into the part still being
+        # chosen, which otherwise leaves a stray water point at the live pipe's invert.
+        from drainworks_plugin.sideview.profile_builder import dist_in_spans, strip_preview_water
+        live_spans = strip_preview_water(profile, route, self.pipes_by_code, committed_codes)
         from drainworks_plugin.sideview.berging import route_berging
         water, volume = route_berging(committed_route, self.pipes_by_code, self._segments_by_pipe)
+        if live_spans:
+            water = [(d, lv) for d, lv in water if not dist_in_spans(d, live_spans)]
         # The side-view draws per-point water (accurate) when the profile carries it,
         # otherwise the segment-midpoint overlay `water`; it owns the show/hide toggle.
         self.side_view.show_profile(profile, water_overlay=water)
