@@ -99,71 +99,132 @@ class DrainworksPlugin:
         input_path, meas_path, gpkg_path = dialog.values()
         if not input_path:
             return
-        # Opening an existing GeoPackage is cheap (no parsing) -> load directly.
+        # Opening an existing GeoPackage is cheap (no parsing) -> load directly. It still
+        # reads the whole network/profile/segments, which is slow for a large gpkg, so
+        # show a (main-thread) loading bar driven via processEvents.
         if input_path.lower().endswith(".gpkg"):
             from drainworks_plugin.io.geopackage_store import check_base_schema
             problem = check_base_schema(input_path)
             if problem:  # incompatible/foreign gpkg -> clear message, no cryptic crash
                 self.iface.messageBar().pushCritical("Drainworks", problem)
                 return
+            from qgis.PyQt.QtWidgets import QApplication
+
+            from drainworks_plugin.ui.busy import start_progress
+
+            busy = start_progress(self.iface, "GeoPackage laden…")
+
+            def report(frac, label):
+                busy.set_progress(frac * 100)
+                busy.set_text(label)
+                QApplication.processEvents()  # repaint the bar during the blocking load
+
+            QApplication.processEvents()
             try:
-                self._load_and_show(input_path)
+                self._load_and_show(input_path, on_progress=report)
             except Exception as exc:  # surface to the user, don't crash QGIS
                 self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {exc}")
+            finally:
+                busy.stop()
             return
-        # Parsing RIBX/SUFRIB + writing the base GeoPackage is heavy -> run it in a
-        # QgsTask (progress bar, no GUI freeze); load the layers in the callback.
+        # Parse RIBX/SUFRIB off-thread (QgsTask, GUI stays responsive); the GeoPackage
+        # write happens on the MAIN thread in the callback, because writing/finalising a
+        # large GeoPackage in a worker thread crashes QGIS on Windows.
         from qgis.core import QgsApplication
 
         from drainworks_plugin.pipeline.tasks import ImportTask
 
-        from drainworks_plugin.ui.busy import bind_progress, start_progress
+        from drainworks_plugin.ui.busy import start_progress
 
         self._import_task = ImportTask(input_path, meas_path or None, gpkg_path,
                                        on_done=self._import_done)
         self._busy = start_progress(self.iface, "Importeren…")
-        bind_progress(self._import_task, self._busy)  # live %/label per stage
+        # Parse fills 0..60% of the bar; the main-thread write fills 60..100%.
+        self._import_task.progress.connect(self._on_import_parse_progress)
         QgsApplication.taskManager().addTask(self._import_task)
 
-    def _import_done(self, task):
-        """Main-thread callback after the import task finishes.
+    def _on_import_parse_progress(self, pct, label):
+        """Map the parse task's 0..100% onto the first 60% of the import bar."""
+        if self._busy is not None:
+            self._busy.set_progress(pct * 0.6)
+            if label:
+                self._busy.set_text(label)
 
-        Defers the message-bar + layer-loading work one event-loop tick out of the
-        ``QgsTask.finished()`` call stack: mutating the QGIS message bar from inside
-        ``finished()`` can corrupt its widget state and crash QGIS.
+    def _import_done(self, task):
+        """Main-thread callback after the parse task finishes.
+
+        Defers the GeoPackage write + layer loading one event-loop tick out of the
+        ``QgsTask.finished()`` call stack (mutating the message bar there can crash
+        QGIS). The write runs here, on the main thread (Windows-safe).
         """
         from qgis.PyQt.QtCore import QTimer
 
         error = task.error
-        result = None if error is not None else str(task.result)
-        QTimer.singleShot(0, lambda: self._import_finalize(error, result))
+        result = None if error is not None else task.result   # parsed BuildResult
+        gpkg = task.gpkg_path
+        QTimer.singleShot(0, lambda: self._import_finalize(error, result, gpkg))
 
-    def _import_finalize(self, error, gpkg_out):
-        """Stop the busy bar, then load the layers or report the error (off-stack)."""
+    def _import_finalize(self, error, result, gpkg):
+        """Write the GeoPackage on the main thread, then load (or report the error)."""
+        if error is not None:
+            self._finish_import_busy()
+            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {error}")
+            return
+        from qgis.PyQt.QtWidgets import QApplication
+
+        from drainworks_plugin.io.import_controller import write_base_from_result
+
+        busy = self._busy
+
+        def report(frac, label):
+            if busy is not None:
+                busy.set_progress(60 + 40 * frac)   # write = 60..100% of the bar
+                busy.set_text(label)
+            QApplication.processEvents()             # repaint during the blocking write
+
+        try:
+            gpkg_out = write_base_from_result(gpkg, result, on_progress=report)
+        except Exception as exc:
+            self._finish_import_busy()
+            self.iface.messageBar().pushCritical("Drainworks", f"Wegschrijven mislukt: {exc}")
+            return
+        self._finish_import_busy()
+        try:
+            self._load_and_show(str(gpkg_out))
+        except Exception as exc:
+            self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
+
+    def _finish_import_busy(self):
+        """Stop the import busy bar and clear the running-import state."""
         if self._busy is not None:
             self._busy.stop()
         self._busy = None
         self._import_task = None
-        if error is not None:
-            self.iface.messageBar().pushCritical("Drainworks", f"Importeren mislukt: {error}")
-            return
-        try:
-            self._load_and_show(gpkg_out)
-        except Exception as exc:
-            self.iface.messageBar().pushCritical("Drainworks", f"Laden mislukt: {exc}")
 
-    def _load_and_show(self, gpkg_out):
-        """Load the GeoPackage layers, zoom, and hand them to the dock."""
+    def _load_and_show(self, gpkg_out, on_progress=None):
+        """Load the GeoPackage layers, zoom, and hand them to the dock.
+
+        ``on_progress(fraction, label)`` (0..1), if given, reports load progress
+        (layers → zoom → reading the data in the dock) for a loading bar.
+        """
         from drainworks_plugin.io.import_controller import load_pipeline_layers
 
+        def _p(frac, label):
+            if on_progress is not None:
+                on_progress(frac, label)
+
+        _p(0.05, "Lagen laden…")
         manhole_layer, pipe_layer, group, _segments = load_pipeline_layers(gpkg_out)
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
         self.layer_group = group
         self.gpkg_path = gpkg_out
+        _p(0.30, "Inzoomen…")
         self._zoom_to_layers([pipe_layer, manhole_layer])
         if self.dock is not None:
-            self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path)
+            # The dock reads the network/profile/segments; map its 0..1 into 0.35..1.0.
+            self.dock.set_data(manhole_layer, pipe_layer, self.gpkg_path,
+                               on_progress=lambda f, l: _p(0.35 + 0.65 * f, l))
             self.dock.show()
         self.iface.messageBar().pushSuccess(
             "Drainworks",

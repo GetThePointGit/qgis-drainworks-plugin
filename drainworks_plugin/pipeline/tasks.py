@@ -8,7 +8,6 @@ Each task's ``run()`` does the heavy work (callable directly in tests) and store
 from qgis.core import QgsTask
 from qgis.PyQt.QtCore import pyqtSignal
 
-from drainworks_plugin.io.import_controller import import_to_base
 from drainworks_plugin.pipeline.berging import compute_berging
 from drainworks_plugin.pipeline.enrich import enrich
 
@@ -61,15 +60,23 @@ class _StepTask(QgsTask):
 
 
 class ImportTask(_StepTask):
-    """Step 1: parse + write_base."""
+    """Step 1: parse the input off-thread (RIBX/SUFRIB -> BuildResult).
+
+    Only the parse runs here; ``result`` is the parsed ``BuildResult``. The GeoPackage
+    write must happen on the main thread (writing/finalising a large GeoPackage in a
+    worker thread crashes QGIS on Windows), so the controller does that in the
+    ``on_done`` callback. ``gpkg_path`` is the destination for that write.
+    """
 
     def __init__(self, input_path, measurement_path, gpkg_path, on_done=None):
         super().__init__("Drainworks: importeren", on_done)
-        self._args = (input_path, measurement_path, gpkg_path)
+        self._args = (input_path, measurement_path)
+        self.gpkg_path = gpkg_path
 
     def _work(self):
-        """Parse the input and write the base layers to the GeoPackage."""
-        return import_to_base(*self._args, on_progress=self._report)
+        """Parse RIBX/SUFRIB into a BuildResult (no GeoPackage write here)."""
+        from drainworks_plugin.io.import_controller import parse_input
+        return parse_input(*self._args, on_progress=self._report)
 
 
 class EnrichTask(_StepTask):

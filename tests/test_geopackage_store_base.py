@@ -39,3 +39,18 @@ def test_read_raw_measurements_roundtrip(fixtures_dir, tmp_gpkg):
     assert raw["L001"].reverse is False
     dists = sorted(p["dist"] for p in raw["L001"].points)
     assert dists == [0.0, 15.0, 30.0]
+
+
+def test_write_base_batched_commits_roundtrip(fixtures_dir, tmp_gpkg, monkeypatch):
+    # Force several commit batches (the boundary that bounds the transaction on Windows)
+    # and confirm the result is identical to a single-transaction write.
+    import drainworks_plugin.io.geopackage_store as gs
+    monkeypatch.setattr(gs, "WRITE_BATCH", 2)
+    res = _base(fixtures_dir)
+    gs.write_base(tmp_gpkg, res.manholes, res.pipes, res.raw_measurements)
+
+    raw = read_raw_measurements(tmp_gpkg)
+    assert sorted(p["dist"] for p in raw["L001"].points) == [0.0, 15.0, 30.0]
+    from osgeo import ogr
+    ds = ogr.Open(str(tmp_gpkg))
+    assert ds.GetLayerByName("measurements_raw").GetFeatureCount() == 3

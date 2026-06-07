@@ -106,6 +106,7 @@ manual QGIS pass.
 
 ## Documentation
 
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
 - **User manual:** [docs/manual/](docs/manual/) — markdown documents convertible to PDF,
   with marked screenshot positions.
 - **Design history:** [docs/superpowers/specs](docs/superpowers/specs) and

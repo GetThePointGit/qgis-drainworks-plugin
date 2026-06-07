@@ -350,8 +350,12 @@ class DrainworksDock(QDockWidget):
             widget.setEnabled(enabled)
 
     # --------------------------------------------------------------- data
-    def set_data(self, manhole_layer, pipe_layer, gpkg_path):
-        """Called after an import: load the network and reset trajectory state."""
+    def set_data(self, manhole_layer, pipe_layer, gpkg_path, on_progress=None):
+        """Called after an import: load the network and reset trajectory state.
+
+        ``on_progress(fraction, label)`` (0..1), if given, is called at each read step
+        so a caller can show a loading bar while opening a (large) GeoPackage.
+        """
         from drainworks_plugin.io.geopackage_store import (
             read_manhole_points,
             read_manholes,
@@ -359,6 +363,10 @@ class DrainworksDock(QDockWidget):
         )
         from drainworks_plugin.trajectory.graphics import TrajectoryGraphics
         from drainworks_plugin.trajectory.network import SewerNetwork
+
+        def _p(frac, label):
+            if on_progress is not None:
+                on_progress(frac, label)
 
         self.manhole_layer = manhole_layer
         self.pipe_layer = pipe_layer
@@ -371,15 +379,20 @@ class DrainworksDock(QDockWidget):
             f"Putten {counts['manholes']} · Leidingen {counts['pipes']} · "
             f"Metingen {counts['measurements']}")
 
+        _p(0.10, "Leidingen lezen…")
         pipes = read_pipes(self.gpkg_path)
         self.pipes_by_code = {p.code: p for p in pipes}
+        _p(0.30, "Netwerk opbouwen…")
         self.network = SewerNetwork(pipes)
         self.manhole_points = read_manhole_points(self.gpkg_path)
+        _p(0.50, "Profiel lezen…")
         self.measurements_by_pipe = self._read_profile_for_sideview()
+        _p(0.70, "Segmenten lezen…")
         self._segments_by_pipe = self._read_segments_by_pipe()
         self.pipe_geoms = {f["code"]: f.geometry() for f in pipe_layer.getFeatures()}
 
         # Sink combo + existing sinks.
+        _p(0.85, "Putten lezen…")
         manholes = read_manholes(self.gpkg_path)
         self._manholes_by_code = {m.code: m for m in manholes}
         self.sink_combo.clear()
@@ -400,9 +413,11 @@ class DrainworksDock(QDockWidget):
             self._canvas_move_connected = True
         self.waypoints = []
         self._update_sink_markers()
+        _p(0.95, "Tekenen…")
         self._rebuild()
         self._set_data_enabled(True)
         self._restore_pipeline_state()
+        _p(1.0, "Klaar")
 
     def _restore_pipeline_state(self):
         """Set step state + summaries + settings from the gpkg's dw_meta + fingerprint."""
