@@ -3,6 +3,11 @@
 Flood-fills a per-pipe profile and aggregates the result onto each pre-built
 segment. ``resolution='accurate'`` (default) floods the detailed ``profile``
 points; ``'fast'`` floods the coarse segment endpoints.
+
+Like step 2, the work is split into a **compute** half (read + flood-fill, safe in
+a ``QgsTask`` worker thread) and a **write** half (all GeoPackage writes, which must
+run on the main thread — finalising a large GeoPackage in a worker thread crashes
+QGIS on Windows). :func:`compute_berging` chains both for synchronous callers/tests.
 """
 
 import math
@@ -10,11 +15,17 @@ import math
 import rgs_ribx
 
 from drainworks_plugin.io.geopackage_store import (
+    berging_fingerprint,
+    point_along_wkt,
     read_manholes,
+    read_meta,
     read_pipes,
     read_profile,
     read_segments,
+    total_lost_volume,
     update_segments_berging,
+    write_meta,
+    write_profile,
 )
 
 
@@ -72,12 +83,25 @@ def _aggregate(points):
     }
 
 
-def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
-    """Flood-fill + fill segment berging fields. Returns the segment count.
+def berging_compute(gpkg_path, resolution="accurate", on_progress=None) -> dict:
+    """Read the data and flood-fill the network (no GeoPackage writes).
 
-    ``on_progress(fraction, label)`` (0..1), if given, is called at each stage
-    (read / build network / flood-fill / write) so the caller can show a stepped
-    progress bar. Errors in the callback are ignored.
+    Parameters
+    ----------
+    gpkg_path : str or pathlib.Path
+        Path to the Drainworks GeoPackage.
+    resolution : {'accurate', 'fast'}, optional
+        ``'accurate'`` floods the detailed profile points; ``'fast'`` floods the
+        coarse segment endpoints (default ``'accurate'``).
+    on_progress : callable, optional
+        ``on_progress(fraction, label)`` (0..1) for a stepped progress bar.
+
+    Returns
+    -------
+    dict
+        A write-plan consumed by :func:`berging_write` with keys ``profile_rows``
+        (``None`` for fast / no profile), ``segment_updates`` (``{fid: values}``),
+        ``berging_fingerprint``, ``settings``, ``sinks`` and ``n_segments``.
     """
     def _report(frac, label):
         if on_progress is not None:
@@ -91,8 +115,9 @@ def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
     pipes = {p.code: p for p in read_pipes(gpkg_path)}
     segments = read_segments(gpkg_path)
     profile_pts = read_profile(gpkg_path)
+    enrich_fp = read_meta(gpkg_path).get("enrich_fingerprint")
 
-    _report(0.30, "Netwerk opbouwen…")
+    _report(0.35, "Netwerk opbouwen…")
     segs_by_pipe = {}
     for seg in segments:
         segs_by_pipe.setdefault(seg["pipe_code"], []).append(seg)
@@ -103,26 +128,25 @@ def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
             profiles[code] = profile_pts[code]
         elif segs_by_pipe.get(code):
             profiles[code] = _endpoint_profile(pipe, segs_by_pipe[code])
-    _report(0.45, "Waterstanden berekenen…")
+    _report(0.55, "Waterstanden berekenen…")
     rgs_ribx.compute_lost_capacity(manholes, pipes, profiles)
 
     # Accurate: persist the per-point water back to the profile layer so the
     # side-view can show a water level per measurement point (fast does not).
+    profile_rows = None
     if resolution == "accurate" and profile_pts:
-        _report(0.70, "Profiel wegschrijven…")
-        from drainworks_plugin.io.geopackage_store import point_along_wkt, write_profile
-        rows = []
+        _report(0.80, "Profiel voorbereiden…")
+        profile_rows = []
         for code in profile_pts:
             pipe = pipes.get(code)
             wkt = pipe.geometry_wkt if pipe else None
             for mp in profiles.get(code, []):
-                rows.append({
+                profile_rows.append({
                     "pipe_code": code, "dist": mp.dist, "bob": mp.bob, "obb": mp.obb,
                     "water_level": mp.water_level, "flooded_pct": mp.flooded_pct,
                     "geometry_wkt": point_along_wkt(wkt, mp.dist) if wkt else None})
-        write_profile(gpkg_path, rows)
 
-    _report(0.88, "Segmenten wegschrijven…")
+    _report(0.92, "Segmenten aggregeren…")
     updates = {}
     for seg in segments:
         pts = profiles.get(seg["pipe_code"], [])
@@ -131,16 +155,75 @@ def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
         if len(window) < 2:
             window = pts
         updates[seg["fid"]] = _aggregate(window)
-    update_segments_berging(gpkg_path, updates)
-    from drainworks_plugin.io.geopackage_store import (
-        berging_fingerprint, read_meta, total_lost_volume, write_meta)
-    enrich_fp = read_meta(gpkg_path).get("enrich_fingerprint")
+
     sinks = sorted(m.code for m in manholes.values() if m.is_sink)
-    write_meta(gpkg_path, {
+    _report(1.0, "Berekend")
+    return {
+        "profile_rows": profile_rows,
+        "segment_updates": updates,
         "berging_fingerprint": berging_fingerprint(enrich_fp, sinks),
-        "berging_settings": {"resolution": resolution},
-        "berging_total": total_lost_volume(gpkg_path),
+        "settings": {"resolution": resolution},
         "sinks": sinks,
+        "n_segments": len(segments),
+    }
+
+
+def berging_write(gpkg_path, plan, on_progress=None) -> int:
+    """Apply a :func:`berging_compute` plan to the GeoPackage (all writes here).
+
+    Must run on the **main thread** (Windows crash on worker-thread finalise).
+
+    Parameters
+    ----------
+    gpkg_path : str or pathlib.Path
+        Path to the Drainworks GeoPackage.
+    plan : dict
+        The write-plan returned by :func:`berging_compute`.
+    on_progress : callable, optional
+        ``on_progress(fraction, label)`` (0..1) for a stepped progress bar.
+
+    Returns
+    -------
+    int
+        ``plan["n_segments"]``.
+    """
+    def _report(frac, label):
+        if on_progress is not None:
+            try:
+                on_progress(frac, label)
+            except Exception:
+                pass
+
+    if plan["profile_rows"] is not None:
+        _report(0.05, "Profiel wegschrijven…")
+        write_profile(gpkg_path, plan["profile_rows"])
+    _report(0.55, "Segmenten wegschrijven…")
+    update_segments_berging(gpkg_path, plan["segment_updates"])
+    _report(0.90, "Afronden…")
+    write_meta(gpkg_path, {
+        "berging_fingerprint": plan["berging_fingerprint"],
+        "berging_settings": plan["settings"],
+        "berging_total": total_lost_volume(gpkg_path),
+        "sinks": plan["sinks"],
     })
     _report(1.0, "Klaar")
-    return len(segments)
+    return plan["n_segments"]
+
+
+def compute_berging(gpkg_path, resolution="accurate", on_progress=None) -> int:
+    """Flood-fill + fill segment berging fields (compute + write). Returns segment count.
+
+    Convenience wrapper that chains :func:`berging_compute` and :func:`berging_write`
+    for synchronous callers and tests. ``on_progress(fraction, label)`` (0..1), if
+    given, spans both halves (compute 0..0.6, write 0.6..1.0).
+    """
+    def _report(frac, label):
+        if on_progress is not None:
+            try:
+                on_progress(frac, label)
+            except Exception:
+                pass
+
+    plan = berging_compute(gpkg_path, resolution=resolution,
+                           on_progress=lambda f, l: _report(0.6 * f, l))
+    return berging_write(gpkg_path, plan, on_progress=lambda f, l: _report(0.6 + 0.4 * f, l))

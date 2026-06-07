@@ -2,7 +2,12 @@ import pytest
 
 import rgs_ribx
 
-from drainworks_plugin.sideview.profile_builder import build_profile
+from drainworks_plugin.sideview.profile_builder import (
+    build_profile,
+    dist_in_spans,
+    live_pipe_spans,
+    strip_preview_water,
+)
 from drainworks_plugin.trajectory.network import Path
 
 
@@ -114,3 +119,56 @@ def test_build_profile_emits_manhole_levels_with_ground():
     assert levels["P2"][1] == 0.1
     assert round(levels["P1"][0], 1) == -2.0
     assert round(levels["P2"][0], 1) == -2.6
+
+
+def test_live_pipe_spans_marks_only_preview_pipes():
+    pipes = {
+        "L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-2.5, length=10.0),
+        "L2": _pipe("L2", "P2", "P3", bob_a=-2.5, bob_b=-3.0, length=10.0),
+    }
+    route = Path(manholes=["P1", "P2", "P3"], pipe_codes=["L1", "L2"], total_length=20.0)
+    # L1 is committed, L2 is the live (preview-only) pipe.
+    spans = live_pipe_spans(route, pipes, committed_codes={"L1"})
+    assert spans == [(10.0, 20.0)]
+    assert dist_in_spans(15.0, spans)
+    assert dist_in_spans(10.0, spans)        # the junction boundary counts as live
+    assert not dist_in_spans(9.0, spans)
+
+
+def test_strip_preview_water_clears_water_on_live_span_and_boundary():
+    pipes = {
+        "L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-2.5, length=10.0),
+        "L2": _pipe("L2", "P2", "P3", bob_a=-2.5, bob_b=-3.0, length=10.0),
+    }
+    route = Path(manholes=["P1", "P2", "P3"], pipe_codes=["L1", "L2"], total_length=20.0)
+    # Committed L1 carries water to its end (the junction); L2 is live with a water point.
+    measured = {"L1": [
+        {"dist": 0.0, "bob": -2.0, "obb": -1.5, "water_level": -2.2},
+        {"dist": 7.0, "bob": -2.35, "obb": -1.85, "water_level": -2.2},
+    ]}
+    profile = build_profile(route, pipes, measured)
+    # The committed end-anchor extends water to the junction (dist 10) before stripping.
+    assert any(abs(v.dist - 10.0) < 1e-6 and v.water_level is not None
+               for v in profile.vertices)
+
+    spans = strip_preview_water(profile, route, pipes, committed_codes={"L1"})
+    assert spans == [(10.0, 20.0)]
+    # No water survives at the junction or anywhere in the live span.
+    assert all(v.water_level is None for v in profile.vertices if v.dist >= 10.0 - 1e-6)
+    # Real committed measurements (before the junction) keep their water.
+    assert any(v.water_level is not None for v in profile.vertices if v.dist < 10.0 - 1e-6)
+
+
+def test_strip_preview_water_noop_when_all_committed():
+    pipes = {"L1": _pipe("L1", "P1", "P2", bob_a=-2.0, bob_b=-2.5, length=10.0)}
+    route = Path(manholes=["P1", "P2"], pipe_codes=["L1"], total_length=10.0)
+    measured = {"L1": [
+        {"dist": 0.0, "bob": -2.0, "obb": -1.5, "water_level": -2.2},
+        {"dist": 5.0, "bob": -2.25, "obb": -1.75, "water_level": -2.2},
+    ]}
+    profile = build_profile(route, pipes, measured)
+    before = [v.water_level for v in profile.vertices]
+    # A fully committed route has no live pipes -> no spans, water untouched.
+    spans = strip_preview_water(profile, route, pipes, committed_codes={"L1"})
+    assert spans == []
+    assert [v.water_level for v in profile.vertices] == before

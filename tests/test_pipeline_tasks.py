@@ -27,19 +27,31 @@ def _base(tmp_gpkg):
     write_base(tmp_gpkg, manholes, pipes, raw)
 
 
-def test_enrich_task_run_builds_segments(tmp_gpkg):
+def test_enrich_task_computes_without_writing(tmp_gpkg):
+    # The enrich task only COMPUTES (off-thread); ``result`` is the write-plan and
+    # the GeoPackage write happens later on the main thread via enrich_write.
+    from drainworks_plugin.pipeline.enrich import enrich_write
     _base(tmp_gpkg)
     task = EnrichTask(str(tmp_gpkg), correct_bob=False)
     assert task.run() is True
-    assert task.result is not None and task.result["n_segments"] >= 1
+    assert task.result is not None and task.result["summary"]["n_segments"] >= 1
+    assert task.result["segment_rows"]              # plan carries the rows to write
+    assert not read_segments(str(tmp_gpkg))         # nothing written by the worker
+    enrich_write(str(tmp_gpkg), task.result)        # main-thread write applies it
     assert read_segments(str(tmp_gpkg))
 
 
-def test_berging_task_run_fills_segments(tmp_gpkg):
+def test_berging_task_computes_without_writing(tmp_gpkg):
+    from drainworks_plugin.pipeline.berging import berging_write
+    from drainworks_plugin.pipeline.enrich import enrich
     _base(tmp_gpkg)
-    assert EnrichTask(str(tmp_gpkg), correct_bob=False).run() is True
+    enrich(str(tmp_gpkg), correct_bob=False)        # enrich (compute + write) for the base
     task = BergingTask(str(tmp_gpkg), resolution="accurate")
     assert task.run() is True
+    assert task.result["segment_updates"]           # plan carries the per-fid updates
+    # Nothing flooded yet in the gpkg until the write is applied on the main thread.
+    assert not any((s.get("flooded_pct") or 0) > 0 for s in read_segments(str(tmp_gpkg)))
+    berging_write(str(tmp_gpkg), task.result)
     assert any((s.get("flooded_pct") or 0) > 0 for s in read_segments(str(tmp_gpkg)))
 
 

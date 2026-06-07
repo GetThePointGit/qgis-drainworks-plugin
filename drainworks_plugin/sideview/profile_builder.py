@@ -44,6 +44,71 @@ def _diameter(pipe) -> float:
     return pipe.diameter if pipe.diameter is not None else 0.0
 
 
+def live_pipe_spans(route, pipes: dict, committed_codes) -> list:
+    """Cumulative ``(start, end)`` distance spans of preview-only pipes along ``route``.
+
+    Parameters
+    ----------
+    route : drainworks_plugin.trajectory.network.Path
+        The previewed route.
+    pipes : dict[str, rgs_ribx.Pipe]
+        Pipes keyed by code (for their lengths).
+    committed_codes : set of str
+        Pipe codes of the committed trajectory; pipes outside this set are "live"
+        (exist only in the preview).
+
+    Returns
+    -------
+    list of (float, float)
+        One span per live pipe, as cumulative distances along ``route``.
+    """
+    spans = []
+    cumulative = 0.0
+    for code in route.pipe_codes:
+        pipe = pipes.get(code)
+        length = (pipe.length or 0.0) if pipe is not None else 0.0
+        if code not in committed_codes:
+            spans.append((cumulative, cumulative + length))
+        cumulative += length
+    return spans
+
+
+def dist_in_spans(dist, spans, eps=1e-6) -> bool:
+    """Whether ``dist`` falls within (or on the boundary of) any ``(start, end)`` span."""
+    return any(s - eps <= dist <= e + eps for s, e in spans)
+
+
+def strip_preview_water(profile, route, pipes: dict, committed_codes) -> list:
+    """Null the water level on preview-only pipes' spans (in place).
+
+    During a live trajectory preview the not-yet-committed pipes should show only the
+    BOB line, never water; stripping their spans (including the junction boundary)
+    also stops the committed pool from extending across into the part being chosen.
+
+    Parameters
+    ----------
+    profile : Profile
+        The profile to mutate.
+    route : drainworks_plugin.trajectory.network.Path
+        The previewed route.
+    pipes : dict[str, rgs_ribx.Pipe]
+        Pipes keyed by code.
+    committed_codes : set of str
+        Pipe codes of the committed trajectory.
+
+    Returns
+    -------
+    list of (float, float)
+        The live spans (so callers can clip an overlay to match).
+    """
+    spans = live_pipe_spans(route, pipes, committed_codes)
+    if spans:
+        for v in profile.vertices:
+            if dist_in_spans(v.dist, spans):
+                v.water_level = None
+    return spans
+
+
 def build_profile(path, pipes: dict, measurements_by_pipe=None,
                   observations_by_pipe=None, manholes_by_code=None) -> Profile:
     """Build a Profile from a network Path.

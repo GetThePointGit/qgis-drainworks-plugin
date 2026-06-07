@@ -8,8 +8,8 @@ Each task's ``run()`` does the heavy work (callable directly in tests) and store
 from qgis.core import QgsTask
 from qgis.PyQt.QtCore import pyqtSignal
 
-from drainworks_plugin.pipeline.berging import compute_berging
-from drainworks_plugin.pipeline.enrich import enrich
+from drainworks_plugin.pipeline.berging import berging_compute
+from drainworks_plugin.pipeline.enrich import enrich_compute
 
 
 class _StepTask(QgsTask):
@@ -80,7 +80,13 @@ class ImportTask(_StepTask):
 
 
 class EnrichTask(_StepTask):
-    """Step 2: validate + integrate + segments."""
+    """Step 2: validate + integrate + segments.
+
+    Only the **compute** half runs here (off-thread); ``result`` is the write-plan
+    from :func:`enrich_compute`. The GeoPackage write happens later on the main
+    thread (writing/finalising a large GeoPackage in a worker thread crashes QGIS
+    on Windows), so the dock calls :func:`enrich_write` in its ``on_done`` callback.
+    """
 
     def __init__(self, gpkg_path, correct_bob=True, min_segment=None,
                  bob_segment=None, on_done=None):
@@ -93,12 +99,17 @@ class EnrichTask(_StepTask):
             self._kwargs["bob_segment"] = bob_segment
 
     def _work(self):
-        """Validate, integrate and build segments for the base data."""
-        return enrich(self.gpkg_path, on_progress=self._report, **self._kwargs)
+        """Validate, integrate and build segments (no GeoPackage write here)."""
+        return enrich_compute(self.gpkg_path, on_progress=self._report, **self._kwargs)
 
 
 class BergingTask(_StepTask):
-    """Step 3: flood-fill + segment berging."""
+    """Step 3: flood-fill + segment berging.
+
+    Only the **compute** half runs here (off-thread); ``result`` is the write-plan
+    from :func:`berging_compute`. The GeoPackage write happens on the main thread
+    via :func:`berging_write` in the dock's ``on_done`` callback (Windows safety).
+    """
 
     def __init__(self, gpkg_path, resolution="accurate", on_done=None):
         super().__init__("Drainworks: verloren berging", on_done)
@@ -106,6 +117,6 @@ class BergingTask(_StepTask):
         self.resolution = resolution
 
     def _work(self):
-        """Run the flood-fill and write per-segment lost-storage results."""
-        return compute_berging(self.gpkg_path, resolution=self.resolution,
+        """Flood-fill the network and aggregate per-segment (no GeoPackage write here)."""
+        return berging_compute(self.gpkg_path, resolution=self.resolution,
                                on_progress=self._report)

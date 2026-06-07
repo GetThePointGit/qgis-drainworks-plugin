@@ -511,17 +511,29 @@ class DrainworksDock(QDockWidget):
         QTimer.singleShot(0, lambda: self._enrich_finalize(error, result))
 
     def _enrich_finalize(self, error, result):
-        """Clear busy, report errors, refresh summary and layers (off-stack)."""
-        if self._busy is not None:
-            self._busy.stop()
-        self._busy = None
+        """Write the enrich result on the main thread, then refresh summary/layers.
+
+        The task only computed (off-thread); ``result`` is the write-plan. The
+        GeoPackage write happens here on the main thread (Windows-safe).
+        """
         if error is not None:
+            self._clear_busy()
             self.iface.messageBar().pushCritical("Drainworks", f"Verrijken mislukt: {error}")
             self.active_task = None
             self._refresh_step_buttons()
             return
+        from drainworks_plugin.pipeline.enrich import enrich_write
+        try:
+            summary = self._write_on_main_thread(enrich_write, result)
+        except Exception as exc:  # surface, don't crash QGIS
+            self._clear_busy()
+            self.iface.messageBar().pushCritical("Drainworks", f"Wegschrijven mislukt: {exc}")
+            self.active_task = None
+            self._refresh_step_buttons()
+            return
+        self._clear_busy()
         self.state.mark_enriched()
-        s = result or {}
+        s = summary or {}
         self.enrich_summary.setText(
             f"{s.get('n_segments', 0)} segmenten · {s.get('n_errors', 0)} fouten · "
             f"{s.get('n_warnings', 0)} waarschuwingen")
@@ -567,15 +579,27 @@ class DrainworksDock(QDockWidget):
         QTimer.singleShot(0, lambda: self._loss_finalize(error, result))
 
     def _loss_finalize(self, error, result):
-        """Clear busy, report errors, show the total and refresh layers (off-stack)."""
-        if self._busy is not None:
-            self._busy.stop()
-        self._busy = None
+        """Write the berging result on the main thread, then show total/refresh layers.
+
+        The task only computed (off-thread); ``result`` is the write-plan. The
+        GeoPackage write happens here on the main thread (Windows-safe).
+        """
         if error is not None:
+            self._clear_busy()
             self.iface.messageBar().pushCritical("Drainworks", f"Berekening mislukt: {error}")
             self.active_task = None
             self._refresh_step_buttons()
             return
+        from drainworks_plugin.pipeline.berging import berging_write
+        try:
+            n_segments = self._write_on_main_thread(berging_write, result)
+        except Exception as exc:  # surface, don't crash QGIS
+            self._clear_busy()
+            self.iface.messageBar().pushCritical("Drainworks", f"Wegschrijven mislukt: {exc}")
+            self.active_task = None
+            self._refresh_step_buttons()
+            return
+        self._clear_busy()
         from drainworks_plugin.io.geopackage_store import total_lost_volume
         self.state.mark_berging_computed()
         self.loss_total.setText(
@@ -589,23 +613,64 @@ class DrainworksDock(QDockWidget):
         self._refresh_step_buttons()
         self.active_task = None
         self.iface.messageBar().pushSuccess(
-            "Drainworks", f"Verloren berging berekend ({result} segmenten).")
+            "Drainworks", f"Verloren berging berekend ({n_segments} segmenten).")
 
     def _run_task(self, task):
         """Submit a QgsTask to the task manager, disabling the step buttons."""
         from qgis.core import QgsApplication
 
-        from drainworks_plugin.ui.busy import bind_progress, start_progress
+        from drainworks_plugin.ui.busy import start_progress
 
         if self.active_task is not None:  # don't orphan a running task's busy bar
             self.iface.messageBar().pushInfo("Drainworks", "Er loopt al een berekening.")
             return
         self.active_task = task
         self._busy = start_progress(self.iface, task.description() + "…")
-        bind_progress(task, self._busy)  # live %/label per stage
+        # The task only computes (off-thread); that fills 0..60% of the bar. The
+        # GeoPackage write runs on the main thread in the finalize and fills 60..100%.
+        task.progress.connect(self._on_compute_progress)
         for btn in (self.btn_enrich, self.btn_loss):
             btn.setEnabled(False)
         QgsApplication.taskManager().addTask(task)
+
+    def _on_compute_progress(self, pct, label):
+        """Map a compute task's 0..100% onto the first 60% of the step's bar."""
+        if self._busy is not None:
+            self._busy.set_progress(pct * 0.6)
+            if label:
+                self._busy.set_text(label)
+
+    def _clear_busy(self):
+        """Stop and drop the busy/progress bar, if any."""
+        if self._busy is not None:
+            self._busy.stop()
+        self._busy = None
+
+    def _write_on_main_thread(self, write_fn, plan):
+        """Run a pipeline write half on the main thread, driving the bar 60..100%.
+
+        Parameters
+        ----------
+        write_fn : callable
+            ``enrich_write`` / ``berging_write`` (``(gpkg_path, plan, on_progress)``).
+        plan : dict
+            The compute write-plan to apply.
+
+        Returns
+        -------
+        object
+            Whatever ``write_fn`` returns (enrich summary dict / berging segment count).
+        """
+        from qgis.PyQt.QtWidgets import QApplication
+        busy = self._busy
+
+        def report(frac, label):
+            if busy is not None:
+                busy.set_progress(60 + 40 * frac)   # write = 60..100% of the bar
+                busy.set_text(label)
+            QApplication.processEvents()             # repaint during the blocking write
+
+        return write_fn(self.gpkg_path, plan, on_progress=report)
 
     def _refresh_step_buttons(self):
         """Re-enable + relabel the step buttons and status labels from PipelineState."""
@@ -1033,8 +1098,16 @@ class DrainworksDock(QDockWidget):
             self.side_view.show_profile(profile)
             self.volume_label.setText("")
             return
+        # Live preview: pipes that exist only in the preview (not yet committed) must show
+        # no water — just the BOB line. Strip water on their spans (including the junction
+        # boundary) so the committed pool doesn't extend across into the part still being
+        # chosen, which otherwise leaves a stray water point at the live pipe's invert.
+        from drainworks_plugin.sideview.profile_builder import dist_in_spans, strip_preview_water
+        live_spans = strip_preview_water(profile, route, self.pipes_by_code, committed_codes)
         from drainworks_plugin.sideview.berging import route_berging
         water, volume = route_berging(committed_route, self.pipes_by_code, self._segments_by_pipe)
+        if live_spans:
+            water = [(d, lv) for d, lv in water if not dist_in_spans(d, live_spans)]
         # The side-view draws per-point water (accurate) when the profile carries it,
         # otherwise the segment-midpoint overlay `water`; it owns the show/hide toggle.
         self.side_view.show_profile(profile, water_overlay=water)
