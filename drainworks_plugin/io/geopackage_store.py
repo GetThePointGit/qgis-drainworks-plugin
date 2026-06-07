@@ -322,13 +322,14 @@ def read_manhole_points(path):
     return points
 
 
-def _write_measurements_raw(ds, srs, raw_measurements) -> None:
+def _write_measurements_raw(ds, srs, raw_measurements, on_batch=None) -> None:
     """Write the un-integrated measurements as a geometry-less attribute table.
 
     There can be millions of measurement points, so this sets fields by their
     integer index (stable in creation order) instead of by name. OGR resolves a
     field name to an index on every ``SetField(name, ...)`` call; by index that
     lookup is skipped, which dominates the write time for large inspections.
+    ``on_batch(fraction)`` (0..1), if given, is called after each committed batch.
     """
     layer = ds.CreateLayer("measurements_raw", srs, ogr.wkbNone)
     layer.CreateField(ogr.FieldDefn("pipe_code", ogr.OFTString))
@@ -338,6 +339,7 @@ def _write_measurements_raw(ds, srs, raw_measurements) -> None:
     layer.CreateField(ogr.FieldDefn("reverse", ogr.OFTInteger))
     defn = layer.GetLayerDefn()
     f_code, f_dist, f_value, f_mtype, f_reverse = 0, 1, 2, 3, 4  # creation order
+    total = sum(len(r.points) for r in (raw_measurements or {}).values()) or 1
     n = 0
     ds.StartTransaction()
     for code, raw in (raw_measurements or {}).items():
@@ -370,14 +372,30 @@ def _write_measurements_raw(ds, srs, raw_measurements) -> None:
             if n % WRITE_BATCH == 0:        # bound the transaction size (Windows safety)
                 ds.CommitTransaction()
                 ds.StartTransaction()
+                if on_batch is not None:
+                    on_batch(n / total)
     ds.CommitTransaction()
+    if on_batch is not None:
+        on_batch(1.0)
 
 
-def write_base(path, manholes, pipes, raw_measurements) -> Path:
+def write_base(path, manholes, pipes, raw_measurements, on_progress=None) -> Path:
     """Create (overwrite) the step-1 GeoPackage: manholes, pipes, measurements_raw.
 
     No integrated heights, no segments, no validation — those are step 2.
+    ``on_progress(fraction, label)`` (0..1), if given, reports write progress.
+
+    NOTE: this does GDAL/SQLite I/O and must run on the main (GUI) thread — running
+    it in a ``QgsTask`` worker thread crashes QGIS on Windows when finalising a large
+    GeoPackage (access violation in the SQLite file-lock handling).
     """
+    def _report(frac, label):
+        if on_progress is not None:
+            try:
+                on_progress(frac, label)
+            except Exception:
+                pass
+
     path = Path(path)
     if path.exists():
         path.unlink()
@@ -385,16 +403,19 @@ def write_base(path, manholes, pipes, raw_measurements) -> Path:
     ds = driver.CreateDataSource(str(path))
     srs = _srs()
     bottom_levels = _manhole_bottom_levels(pipes)
+    _report(0.02, "GeoPackage wegschrijven…")
     ds.StartTransaction()
     _write_manholes(ds, srs, manholes, bottom_levels)
     _write_pipes(ds, srs, pipes)
     ds.CommitTransaction()
     # measurements_raw can be millions of rows -> it manages its own batched
     # transactions (committing periodically) rather than one giant transaction.
-    _write_measurements_raw(ds, srs, raw_measurements)
+    _write_measurements_raw(ds, srs, raw_measurements,
+                            on_batch=lambda f: _report(0.05 + 0.92 * f, "Metingen wegschrijven…"))
     ds = None
     # Stamp the schema version so the GeoPackage can be recognised on re-open.
     write_meta(path, {"schema_version": SCHEMA_VERSION})
+    _report(1.0, "Klaar")
     return path
 
 

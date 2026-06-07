@@ -1,8 +1,18 @@
 from drainworks_plugin.io.geopackage_store import read_segments, write_base
-from drainworks_plugin.pipeline.tasks import BergingTask, EnrichTask
+from drainworks_plugin.pipeline.tasks import BergingTask, EnrichTask, ImportTask
 
 import rgs_ribx
 from rgs_ribx.model.raw import RawMeasurements
+
+
+def test_import_task_parses_without_writing(fixtures_dir, tmp_gpkg):
+    # The import task only PARSES (off-thread); the GeoPackage write happens later on
+    # the main thread, so no file is written by task.run() itself.
+    task = ImportTask(str(fixtures_dir / "inclined.ribx"), None, str(tmp_gpkg))
+    assert task.run() is True
+    assert task.result is not None and task.result.pipes      # parsed BuildResult
+    assert task.gpkg_path == str(tmp_gpkg)
+    assert not tmp_gpkg.exists()                              # no write in the worker
 
 
 def _base(tmp_gpkg):
