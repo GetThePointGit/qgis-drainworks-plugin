@@ -3,6 +3,20 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
+## 1.0.3 — 2026-06-07
+
+### Fixed
+- **Windows: enrich and lost storage (steps 2 and 3) crashed on large datasets**, the
+  same way the import did before 1.0.2 — the steps wrote/finalised the GeoPackage
+  (`profile`, `segments`) inside the `QgsTask` worker thread. Both steps are now split
+  into a compute half (read + computation, off-thread, GUI stays responsive) and a write
+  half that runs on the **main thread**; segment-berging updates are committed in batches.
+- **Stray water on the live trajectory preview.** While choosing the next point, the
+  committed pipe's pool extended across the junction onto the not-yet-committed (live)
+  segment, leaving a water point at its invert. Water is now stripped on the preview-only
+  pipes' spans (including the junction); the live segment shows only the BOB line. A
+  finalised trajectory is unaffected (it keeps extending water to the pipe end).
+
 ## 1.0.2 — 2026-06-07
 
 ### Fixed
