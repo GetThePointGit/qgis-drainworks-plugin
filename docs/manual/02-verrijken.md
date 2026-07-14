@@ -23,23 +23,23 @@ Klik op het **tandwiel** naast de knop voor de instellingen van deze stap:
 De instellingen worden bewaard (ook per GeoPackage) en zijn later weer op te vragen via het
 tandwiel.
 
-### Wat is een segment, en waarom telt de lengte?
+*Wat is een segment, en waarom telt de lengte?*
 
-Een **segment** is een stukje leiding met een eigen begin- en eind-BOB, gemiddelde helling,
-diameter en hoogste BOB. Samen vormen de segmenten het **hoogteprofiel van het stelsel**
-waarop de volgende stap rekent: de verloren berging (stap 3) bepaalt *per segment* waar water
-blijft staan achter een tegenhelling of in een lokale kom. De segmenten zijn dus de
-rekeneenheid — zonder segmenten geen berging.
-
-Elk segment krijgt ook een **bron**: `measured` voor gemeten leidingen, `bob` voor de
-BOB-fallback. Bij een gemeten leiding zie je het werkelijke, doorhangende verloop; bij een
-BOB-segment een geïdealiseerde rechte helling (er is niet gemeten, dus verzakkingen zijn daar
-niet zichtbaar).
-
-De **lengte** bepaalt het detailniveau. Korte segmenten leggen kleine verzakkingen en kommen
-vast (nauwkeuriger, maar meer data en rekentijd); lange segmenten geven een grover beeld.
-Vergroot de lengtes als het resultaat te rommelig of te zwaar wordt, verklein ze als je fijne
-kommen mist.
+> Een **segment** is een stukje leiding met een eigen begin- en eind-BOB, gemiddelde helling,
+> diameter en hoogste BOB. Samen vormen de segmenten het **hoogteprofiel van het stelsel**
+> waarop de volgende stap rekent: de verloren berging (stap 3) bepaalt *per segment* waar water
+> blijft staan achter een tegenhelling of in een lokale kom. De segmenten zijn dus de
+> rekeneenheid — zonder segmenten geen berging.
+>    
+> Elk segment krijgt ook een **bron**: `measured` voor gemeten leidingen, `bob` voor de
+> BOB-fallback. Bij een gemeten leiding zie je het werkelijke, doorhangende verloop; bij een
+> BOB-segment een geïdealiseerde rechte helling (er is niet gemeten, dus verzakkingen zijn daar
+> niet zichtbaar).
+>    
+> De **lengte** bepaalt het detailniveau. Korte segmenten leggen kleine verzakkingen en kommen
+> vast (nauwkeuriger, maar meer data en rekentijd); lange segmenten geven een grover beeld.
+> Vergroot de lengtes als het resultaat te rommelig of te zwaar wordt, verklein ze als je fijne
+> kommen mist.
 
 ![](screenshots/02-instellingen.png){width=3.5cm}
 
