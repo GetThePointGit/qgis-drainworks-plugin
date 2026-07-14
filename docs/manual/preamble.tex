@@ -4,6 +4,18 @@
 
 \usepackage{graphicx}
 
+% Hoofdstukkop op één regel: "N. Titel" i.p.v. "Hoofdstuk N" met de titel op
+% een nieuwe regel. [hang] zet het nummer naast de titel; minder ruimte erboven.
+\usepackage{titlesec}
+\titleformat{\chapter}[hang]{\huge\bfseries}{\thechapter.}{0.5em}{}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+
+% Dun grijs kader om elke figuur (figure-block.lua roept \figframe aan om de
+% afbeelding). fboxsep = padding, fboxrule = lijndikte; lokaal zodat het geen
+% andere boxes beïnvloedt.
+\definecolor{figbordercolor}{gray}{0.8}
+\newcommand{\figframe}[1]{{\setlength{\fboxsep}{2pt}\setlength{\fboxrule}{0.4pt}\fcolorbox{figbordercolor}{white}{#1}}}
+
 % Elk figuur + caption als één ondeelbaar blok, met witruimte eromheen (zie
 % figure-block.lua, dat de figuren in deze omgeving wikkelt). Een minipage
 % breekt nooit over een paginagrens, dus de figuur blijft bij zijn caption.

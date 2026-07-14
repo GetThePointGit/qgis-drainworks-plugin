@@ -25,8 +25,15 @@ function Blocks(blocks)
     local b = blocks[i]
     local nxt = blocks[i + 1]
     if is_single(b, 'Image') and nxt and is_single(nxt, 'Emph') then
+      -- Wikkel de afbeelding in \figframe{...} (dun grijs kader) en het
+      -- geheel + caption in de samepagefig-omgeving.
+      local framed = pandoc.Para({
+        pandoc.RawInline('latex', '\\figframe{'),
+        b.content[1],
+        pandoc.RawInline('latex', '}'),
+      })
       out:insert(pandoc.RawBlock('latex', '\\begin{samepagefig}'))
-      out:insert(b)
+      out:insert(framed)
       out:insert(nxt)
       out:insert(pandoc.RawBlock('latex', '\\end{samepagefig}'))
       i = i + 2
