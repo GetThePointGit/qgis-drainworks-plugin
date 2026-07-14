@@ -19,7 +19,7 @@ De eerste stap leest riooldata in en schrijft een **GeoPackage met basisdata** w
    invoerbestand wordt automatisch een naam voorgesteld.
 5. Klik **Importeren**.
 
-![](screenshots/01-importdialoog.png){width=6.0cm}
+![](screenshots/01-importdialoog.png){width=5.9cm}
 
 *Het importdialoog "Drainworks — rioolgegevens importeren" met de drie velden ingevuld.*
 
