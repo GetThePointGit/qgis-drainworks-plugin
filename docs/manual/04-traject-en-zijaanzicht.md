@@ -3,8 +3,9 @@
 Met een traject bekijk je een pad door het netwerk in de **langsdoorsnede** (het zijaanzicht
 rechts in het paneel).
 
-> 📷 **Screenshot:** *een gekozen traject (grijze band met A/B/C-punten) op de kaart en het
-> bijbehorende langsprofiel rechts.* `screenshots/04-traject-en-profiel.png`
+![](screenshots/04-traject-en-profiel.png)
+
+*Een gekozen traject (grijze band met A/B/C-punten) op de kaart en het bijbehorende langsprofiel rechts.*
 
 ## Traject samenstellen
 
@@ -22,8 +23,9 @@ langsprofiel verschijnt een knoppenbalk (zie onder). Klik nu putten op de kaart 
 Is een put **niet bereikbaar** vanaf het buurpunt, dan verschijnt een melding en gebeurt er
 niets.
 
-> 📷 **Screenshot:** *de trajectmodus actief, met de blauwe ring op het actieve punt en de
-> grijze trajectband.* `screenshots/04-actief-punt.png`
+![](screenshots/04-actief-punt.png){width=9.8cm}
+
+*De trajectmodus actief, met de blauwe ring op het actieve punt en de grijze trajectband.*
 
 ## Knoppenbalk boven het profiel
 
@@ -34,8 +36,9 @@ niets.
 - **↶ Ongedaan / ↷ Opnieuw** — stap terug/vooruit door de wijzigingen.
 - **Klaar** — sluit de trajectkeuze af (zet de modus uit).
 
-> 📷 **Screenshot:** *de trajectknoppenbalk boven het langsprofiel.*
-> `screenshots/04-trajectbalk.png`
+![](screenshots/04-trajectbalk.png){width=9.8cm}
+
+*De trajectknoppenbalk boven het langsprofiel.*
 
 ## Punten verwijderen & snel afronden
 
@@ -78,8 +81,9 @@ Beweeg je de muis over het traject op de kaart, dan verschijnt een **cursor** in
 op die positie (en andersom). Dit werkt ook als de trajectmodus uitstaat, zolang er een
 traject is.
 
-> 📷 **Screenshot:** *het langsprofiel met de bob-/bovenkant-/maaiveld-lijnen, putcodes en
-> een waterpeil-vulling; de cursor op een positie.* `screenshots/04-langsprofiel.png`
+![](screenshots/04-langsprofiel.png){width=12.3cm}
+
+*Het langsprofiel met de bob-/bovenkant-/maaiveld-lijnen, putcodes en een waterpeil-vulling; de cursor op een positie.*
 
 ## Zijaanzicht-instellingen
 
@@ -95,5 +99,6 @@ Klik op **Zijaanzicht** in de hoofdknoppenbalk (tandwielicoon) voor:
 
 De instellingen zijn persistent (Annuleren / Standaardwaarden).
 
-> 📷 **Screenshot:** *het dialoog "Langsprofiel-instellingen" met de per-lijn-rijen.*
-> `screenshots/04-zijaanzicht-instellingen.png`
+![](screenshots/04-zijaanzicht-instellingen.png){width=5.6cm}
+
+*Het dialoog "Langsprofiel-instellingen" met de per-lijn-rijen.*

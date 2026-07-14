@@ -4,8 +4,9 @@ Met **Opmaak** in de hoofdknoppenbalk (kwasticoon) pas je de kaartweergave van l
 putten en segmenten aan. De keuzes gebruiken *graduated* renderers, zodat de legenda in het
 lagenpaneel meeverandert.
 
-> 📷 **Screenshot:** *het dialoog "Drainworks — opmaak" met de secties Leidingen, Putten en
-> Segmenten.* `screenshots/05-opmaak-dialoog.png`
+![](screenshots/05-opmaak-dialoog.png){width=4.0cm}
+
+*Het dialoog "Drainworks — opmaak" met de secties Leidingen, Putten en Segmenten.*
 
 ## Leidingen
 
@@ -26,13 +27,6 @@ De segmenten liggen **boven** de leidingen. Kleur ze op:
 - **Waterhoogte** (`water_level`).
 - **Max. waterdiepte** (`water_depth_max`).
 
-> 📷 **Screenshot:** *de kaart met segmenten gekleurd op max. waterdiepte, met de bijbehorende
-> legenda in het lagenpaneel.* `screenshots/05-segmenten-waterdiepte.png`
+![](screenshots/05-segmenten-waterdiepte.png)
 
-## Legenda in het lagenpaneel
-
-Omdat alle opmaak via graduated renderers loopt, tonen de lagen in het QGIS-lagenpaneel de
-klassen-legenda die bij je keuze hoort.
-
-> 📷 **Screenshot:** *het QGIS-lagenpaneel met de klassen-legenda onder de Segmenten-laag.*
-> `screenshots/05-legenda.png`
+*De kaart met segmenten gekleurd op max. waterdiepte, met de bijbehorende legenda in het lagenpaneel.*

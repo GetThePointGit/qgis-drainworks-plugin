@@ -13,41 +13,35 @@ leesvolgorde genummerd en bedoeld om naar één PDF te converteren.
 6. [05 — Opmaak van de kaart](05-opmaak.md)
 7. [06 — Installatie & publicatie](06-installatie-en-publicatie.md)
 
-## Screenshots
-
-Op plekken waar een schermafbeelding hoort, staat een blok zoals:
-
-> 📷 **Screenshot:** *korte beschrijving van wat te tonen.*
-> `screenshots/NN-naam.png`
-
-Maak die screenshots in QGIS en plaats ze als `docs/manual/screenshots/NN-naam.png`. De
-PDF-export pakt ze dan automatisch op (vervang het 📷-blok desgewenst door
-`![beschrijving](screenshots/NN-naam.png)` als je ze inline wilt). Aanbevolen: PNG, breedte
-~1400 px, lichte QGIS-thema.
-
 ## Naar PDF converteren
 
-Met [pandoc](https://pandoc.org/) (+ een LaTeX-engine zoals `tectonic` of `xelatex`),
-vanuit deze map:
+Met [pandoc](https://pandoc.org/) + `tectonic` (zelfstandige LaTeX-engine, `brew install
+tectonic`), vanuit deze map:
 
 ```bash
 pandoc metadata.yaml \
        00-overzicht.md 01-importeren.md 02-verrijken.md 03-verloren-berging.md \
        04-traject-en-zijaanzicht.md 05-opmaak.md 06-installatie-en-publicatie.md \
-       --pdf-engine=xelatex --resource-path=. \
+       --pdf-engine=tectonic --resource-path=. --include-in-header=preamble.tex \
        -o drainworks-handleiding.pdf
 ```
 
 `metadata.yaml` levert de **titelpagina** (titel, ondertitel, auteur, versie), de
-inhoudsopgave, genummerde secties en de marges — pas titel/auteur/versie daar aan. Wil je
-een omslagafbeelding, plaats dan `screenshots/00-omslag.png` en haal de `\titlegraphic`-
-regel in `metadata.yaml` uit commentaar. Geen `xelatex`? Gebruik `--pdf-engine=tectonic`.
+inhoudsopgave, genummerde secties en de marges — pas titel/auteur/versie daar aan.
+
+`preamble.tex` (via `--include-in-header`) zet het **lettertype** (Fira Sans + Fira Mono)
+en vervangt symbolen die de bodyfont mist (✓ ⚠ ✕ ↶ ↷). Dit staat bewust in een apart raw
+bestand en niet in `metadata.yaml`: pandoc verwerkt `header-includes` als Markdown en
+escapet dan de `[..]`-font-opties. De fonts worden met `Renderer=OpenType` geladen omdat
+tectonic's HarfBuzz-renderer op deze OTF's crasht.
+
+Wil je een omslagafbeelding, plaats dan `screenshots/00-omslag.png` en haal de
+`\titlegraphic`-regel in `preamble.tex` uit commentaar. Met `xelatex` i.p.v. `tectonic`
+kan `Renderer=OpenType` meestal weg (systeemfonts vereisen dan wel dat Fira Sans/Mono
+geïnstalleerd is).
 
 Alternatief (HTML → print naar PDF in de browser):
 
 ```bash
 pandoc metadata.yaml *.md --toc --standalone -o handleiding.html
 ```
-
-> 📷 **Screenshot:** *(optioneel) omslagafbeelding voor de titelpagina.*
-> `screenshots/00-omslag.png`
