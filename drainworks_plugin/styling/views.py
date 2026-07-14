@@ -13,6 +13,7 @@ from qgis.core import (
     QgsRendererRange,
     QgsSingleSymbolRenderer,
     QgsSymbolLayer,
+    QgsUnitTypes,
     QgsVectorLayerSimpleLabeling,
 )
 from qgis.PyQt.QtGui import QColor
@@ -97,12 +98,17 @@ def _apply_label(layer, expression):
 def apply_pipe_style(layer, color_mode, width_mode, label_mode):
     """Apply colour, width and label modes to the pipes ``layer``."""
     def _line(color):
-        """Build a pipe line symbol of ``color`` (width data-defined per mode)."""
-        s = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "0.66"})
+        """Build a pipe line symbol of ``color`` (width data-defined per mode).
+
+        Widths are in screen pixels, not millimetres, so the difference between
+        thin and thick pipes stays visible on screen regardless of map scale.
+        """
+        s = QgsLineSymbol.createSimple({"color": PIPE_DEFAULT, "width": "2.5"})
+        s.setOutputUnit(QgsUnitTypes.RenderPixels)
         s.setColor(QColor(color))
         if width_mode == PIPE_WIDTH_DIAMETER:
             mn, mx = _minmax(layer, "diameter")
-            expr = f'scale_linear("diameter", {mn}, {mx}, 0.4, 3.0)'
+            expr = f'scale_linear("diameter", {mn}, {mx}, 1.0, 12.0)'
             s.symbolLayer(0).setDataDefinedProperty(
                 QgsSymbolLayer.PropertyStrokeWidth, QgsProperty.fromExpression(expr))
         return s
@@ -129,10 +135,12 @@ def apply_pipe_style(layer, color_mode, width_mode, label_mode):
 def apply_manhole_style(layer, color_mode, label_mode):
     """Apply colour and label modes to the manholes ``layer``."""
     def _marker(color):
-        """Build a circular manhole marker symbol of ``color``."""
-        return QgsMarkerSymbol.createSimple(
-            {"name": "circle", "color": color, "size": "2.4",
-             "outline_color": "#ffffff", "outline_width": "0.2"})
+        """Build a circular manhole marker symbol of ``color`` (size in pixels)."""
+        m = QgsMarkerSymbol.createSimple(
+            {"name": "circle", "color": color, "size": "9",
+             "outline_color": "#ffffff", "outline_width": "0.75"})
+        m.setOutputUnit(QgsUnitTypes.RenderPixels)
+        return m
 
     if color_mode == MANHOLE_COLOR_BOTTOM:
         mn, mx = _minmax(layer, "bottom_level")
@@ -170,8 +178,10 @@ def apply_segment_style(layer, color_mode):
     mn, mx = _minmax(layer, field)
 
     def _seg_line(color):
-        """Build a segment line symbol of ``color``."""
-        return QgsLineSymbol.createSimple({"color": color, "width": "1.6"})
+        """Build a segment line symbol of ``color`` (width in pixels)."""
+        s = QgsLineSymbol.createSimple({"color": color, "width": "6"})
+        s.setOutputUnit(QgsUnitTypes.RenderPixels)
+        return s
 
     layer.setRenderer(_graduated(field, mn, mx, _seg_line))
     layer.triggerRepaint()

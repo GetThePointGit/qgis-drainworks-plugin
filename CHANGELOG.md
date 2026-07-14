@@ -3,6 +3,23 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
+## 1.0.4 — 2026-07-14
+
+### Changed
+- **Map styling line widths are now in screen pixels instead of millimetres** (pipes,
+  segments and manholes). Millimetre widths render at a fixed physical size, so on-screen
+  the difference between thin and thick lines — e.g. pipes sized by diameter — was hard to
+  see. Pixel widths keep a constant on-screen thickness at any map scale and make the
+  differences legible. Existing GeoPackages are unaffected; this only changes the applied
+  symbology.
+- **Raised the minimum QGIS version from 3.22 to 3.40 LTR** (`metadata.txt`
+  `qgisMinimumVersion`). The old 3.22 was an unverified scaffold default; the plugin is
+  tested on 3.44 and 3.40 is the supported LTR baseline.
+
+### Fixed
+- Bundled **pyqtgraph** now ships its own `LICENSE.txt` (MIT) under
+  `drainworks_plugin/external/pyqtgraph/`, as its licence requires when redistributing.
+
 ## 1.0.3 — 2026-06-07
 
 ### Fixed
