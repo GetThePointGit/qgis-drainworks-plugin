@@ -1,4 +1,4 @@
-# 3 — Verloren berging berekenen
+# Verloren berging berekenen
 
 De derde stap berekent de **verloren berging** per segment, op basis van de gekozen
 *sinks* (uitstroompunten). Je vindt hem in de tweede stapkaart, **2. Verloren berging**.

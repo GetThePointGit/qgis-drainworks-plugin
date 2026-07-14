@@ -1,4 +1,4 @@
-# 2 — Basisdata verrijken
+# Basisdata verrijken
 
 De tweede stap maakt van de basisdata **verrijkte basisdata**: validatie, hoogtes en
 segmenten. Je vindt hem in de eerste stapkaart, **1. Basisdata verrijken**.

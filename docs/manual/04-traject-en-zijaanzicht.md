@@ -1,4 +1,4 @@
-# 4 — Traject kiezen & zijaanzicht
+# Traject kiezen & zijaanzicht
 
 Met een traject bekijk je een pad door het netwerk in de **langsdoorsnede** (het zijaanzicht
 rechts in het paneel).

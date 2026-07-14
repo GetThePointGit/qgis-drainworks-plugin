@@ -1,4 +1,4 @@
-# 1 — Importeren
+# Importeren
 
 De eerste stap leest riooldata in en schrijft een **GeoPackage met basisdata** weg.
 

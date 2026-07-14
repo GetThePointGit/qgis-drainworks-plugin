@@ -1,4 +1,4 @@
-# 5 — Opmaak van de kaart
+# Opmaak van de kaart
 
 Met **Opmaak** in de hoofdknoppenbalk (kwasticoon) pas je de kaartweergave van leidingen,
 putten en segmenten aan. De keuzes gebruiken *graduated* renderers, zodat de legenda in het
