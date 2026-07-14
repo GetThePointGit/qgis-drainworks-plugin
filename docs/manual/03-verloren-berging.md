@@ -40,7 +40,8 @@ dan vraagt de plug-in je eerst opnieuw te verrijken.) De stap draait op de achte
 bovenin een voortgangsbalk met benoemde stappen (*Waterstanden berekenen… → wegschrijven…*).
 
 Per segment worden gevuld: **waterpeil**, **vullingspercentage** (gemiddeld en max),
-**verloren volume (m³)**, **overstroomde lengte** en **max. waterdiepte**.
+**verloren volume (m³)**, **overstroomde lengte** en **max. waterdiepte**. Hoe de
+flood-fill en deze velden precies berekend worden staat in de *Bijlage — rekenmethoden*.
 
 Het berekende waterpeil zie je in het **zijaanzicht** van een traject (zie *04 — Traject &
 zijaanzicht*): bij **Nauwkeurig** als vlakke plassen per meetpunt, bij **Snel** als één

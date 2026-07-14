@@ -12,6 +12,7 @@ leesvolgorde genummerd en bedoeld om naar één PDF te converteren.
 5. [04 — Traject kiezen & zijaanzicht](04-traject-en-zijaanzicht.md)
 6. [05 — Opmaak van de kaart](05-opmaak.md)
 7. [06 — Installatie & publicatie](06-installatie-en-publicatie.md)
+8. [07 — Bijlage: rekenmethoden](07-bijlage-berekeningen.md) (correctie BOB & verloren berging)
 
 ## Naar PDF converteren
 
@@ -22,6 +23,7 @@ tectonic`), vanuit deze map:
 pandoc metadata.yaml \
        00-overzicht.md 01-importeren.md 02-verrijken.md 03-verloren-berging.md \
        04-traject-en-zijaanzicht.md 05-opmaak.md 06-installatie-en-publicatie.md \
+       07-bijlage-berekeningen.md \
        --pdf-engine=tectonic --resource-path=. --include-in-header=preamble.tex \
        --lua-filter=figure-block.lua \
        -o drainworks-handleiding.pdf

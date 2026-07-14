@@ -12,7 +12,8 @@ segmenten. Je vindt hem in de eerste stapkaart, **1. Basisdata verrijken**.
 Klik op het **tandwiel** naast de knop voor de instellingen van deze stap:
 
 - **Corrigeer BOB** — corrigeert de gemeten hoogtes op de bekende BOB's van begin/eind van
-  de leiding (verwijdert drift in de hellingmetingen). Standaard aan.
+  de leiding (verwijdert drift in de hellingmetingen). Standaard aan. De precieze
+  rekenmethode staat in de *Bijlage — rekenmethoden*.
 - **Segment** — minimale lengte van een gemeten segment (standaard 1 m). De hellingmetingen
   leveren veel dicht op elkaar liggende punten; opeenvolgende punten worden samengevoegd tot
   segmenten van minstens deze lengte.
