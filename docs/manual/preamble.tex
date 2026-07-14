@@ -1,0 +1,61 @@
+% Preamble voor de Drainworks-handleiding PDF.
+% Wordt door pandoc verbatim ingevoegd via `--include-in-header=preamble.tex`
+% (dus GEEN Markdown-verwerking, anders escapet pandoc de [..]-opties).
+
+\usepackage{graphicx}
+
+% Hoofdstukkop op één regel: "N. Titel" i.p.v. "Hoofdstuk N" met de titel op
+% een nieuwe regel. [hang] zet het nummer naast de titel; minder ruimte erboven.
+\usepackage{titlesec}
+\titleformat{\chapter}[hang]{\huge\bfseries}{\thechapter.}{0.5em}{}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+
+% Dun grijs kader om elke figuur (figure-block.lua roept \figframe aan om de
+% afbeelding). fboxsep = padding, fboxrule = lijndikte; lokaal zodat het geen
+% andere boxes beïnvloedt.
+\definecolor{figbordercolor}{gray}{0.8}
+\newcommand{\figframe}[1]{{\setlength{\fboxsep}{2pt}\setlength{\fboxrule}{0.4pt}\fcolorbox{figbordercolor}{white}{#1}}}
+
+% Blockquote-notities links uitlijnen (volle breedte) met een dun grijs
+% streepje links, i.p.v. de standaard symmetrische inspringing die als
+% "gecentreerd" oogt.
+\usepackage{framed}
+\colorlet{quotebarcolor}{gray!45}
+\renewenvironment{quote}
+  {\par\addvspace{\medskipamount}%
+   \def\FrameCommand{{\color{quotebarcolor}\vrule width 2pt}\hspace{8pt}}%
+   \MakeFramed{\advance\hsize-\width\FrameRestore}\noindent\ignorespaces}
+  {\par\endMakeFramed\addvspace{\medskipamount}}
+
+% Elk figuur + caption als één ondeelbaar blok, met witruimte eromheen (zie
+% figure-block.lua, dat de figuren in deze omgeving wikkelt). Een minipage
+% breekt nooit over een paginagrens, dus de figuur blijft bij zijn caption.
+\newenvironment{samepagefig}
+  {\par\addvspace{\bigskipamount}\noindent\begin{minipage}{\linewidth}\centering}
+  {\end{minipage}\par\addvspace{\bigskipamount}}
+
+% Omslagafbeelding boven de titel op de titelpagina.
+\usepackage{titling}
+\pretitle{\begin{center}\includegraphics[width=0.55\textwidth]{screenshots/00-omslag.png}\\[1.5em]\LARGE\bfseries}
+\posttitle{\par\end{center}\vskip 0.5em}
+
+% Strak schreefloos lettertype (Fira Sans + Fira Mono) i.p.v. het standaard
+% Latin Modern. De fonts komen uit tectonic's eigen bundel (laden op
+% bestandsnaam). Renderer=OpenType is nodig omdat tectonic's HarfBuzz-renderer
+% op deze OTF's crasht.
+\setmainfont{FiraSans-Regular.otf}[Renderer=OpenType, BoldFont=FiraSans-Bold.otf, ItalicFont=FiraSans-Italic.otf, BoldItalicFont=FiraSans-BoldItalic.otf]
+\setmonofont{FiraMono-Regular.otf}[Renderer=OpenType, BoldFont=FiraMono-Bold.otf]
+
+% Symbolen die de bodyfont mist (✓ ⚠ ✕ ↶ ↷) vervangen door equivalenten uit
+% pifont/amssymb/FontAwesome, zodat ze niet leeg in de PDF verschijnen. De
+% FontAwesome-driehoek laadt de font direct (het fontawesome5-pakket dwingt de
+% crashende HarfBuzz-renderer af).
+\usepackage{amssymb}
+\usepackage{pifont}
+\newfontface\fawarnfont[Renderer=OpenType]{FontAwesome5Free-Solid-900.otf}
+\usepackage{newunicodechar}
+\newunicodechar{✓}{\ding{51}}
+\newunicodechar{✕}{\ding{55}}
+\newunicodechar{⚠}{{\fawarnfont\symbol{"F071}}}
+\newunicodechar{↶}{\ensuremath{\curvearrowleft}}
+\newunicodechar{↷}{\ensuremath{\curvearrowright}}

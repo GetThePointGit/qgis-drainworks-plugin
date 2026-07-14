@@ -1,10 +1,11 @@
-# 3 — Verloren berging berekenen
+# Verloren berging berekenen
 
 De derde stap berekent de **verloren berging** per segment, op basis van de gekozen
 *sinks* (uitstroompunten). Je vindt hem in de tweede stapkaart, **2. Verloren berging**.
 
-> 📷 **Screenshot:** *de stapkaart "2. Verloren berging" met de sink-keuze, de tabel en de
-> knop.* `screenshots/03-kaart-berging.png`
+![](screenshots/03-kaart-berging.png){width=5.8cm}
+
+*De stapkaart "2. Verloren berging" met de sink-keuze, de tabel en de knop.*
 
 ## Sinks (uitstroompunten) kiezen
 
@@ -16,8 +17,9 @@ Een sink is een put waar water het netwerk verlaat. Kies ze op één van twee ma
 De gekozen sinks staan in een **tabel** met per regel de putcode, de **bodemhoogte (m)** en
 een ✕ om de sink te verwijderen.
 
-> 📷 **Screenshot:** *de sinks-tabel met een paar gekozen sinks (code · bodem · ✕).*
-> `screenshots/03-sinks-tabel.png`
+![](screenshots/03-sinks-tabel.png){width=5.8cm}
+
+*De sinks-tabel met een paar gekozen sinks (code · bodem · ✕).*
 
 De sinks worden bij het berekenen in de GeoPackage bewaard (veld `is_sink` op de putten) en
 bij heropenen weer ingelezen.
@@ -54,5 +56,6 @@ Onder de knop verschijnt:
 De segmenten op de kaart kleuren naar vullingsgraad (zie *05 — Opmaak* om op waterhoogte of
 max. waterdiepte te kleuren).
 
-> 📷 **Screenshot:** *de kaart met gekleurde segmenten over de leidingen na een berekening,
-> en het totaal in de stapkaart.* `screenshots/03-resultaat.png`
+![](screenshots/03-resultaat.png){width=9.0cm}
+
+*De kaart met gekleurde segmenten over de leidingen na een berekening, en het totaal in de stapkaart.*

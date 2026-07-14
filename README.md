@@ -49,11 +49,11 @@ is refused up front with a clear message instead of crashing on a missing field.
 
 ## Installation
 
-See **[docs/manual/06-installatie-en-publicatie.md](docs/manual/06-installatie-en-publicatie.md)**
-for installing from a plugin ZIP and for publishing to the QGIS plugin repository.
-
 Quick version (from a ZIP): *Plugins → Manage and Install Plugins → Install from ZIP →*
-select `drainworks-1.0.0.zip`.
+select `drainworks-<version>.zip`. See the user manual —
+**[docs/manual/06-installatie-en-publicatie.md](docs/manual/06-installatie-en-publicatie.md)** —
+for the full install steps and target-machine requirements. For building the ZIP and
+publishing to the QGIS plugin repository, see [Building & publishing](#building--publishing).
 
 ---
 
@@ -78,7 +78,8 @@ scripts/                  # headless smoke + example-data generators
 The parsing + lost-capacity logic lives in the sibling library
 [`rgs-ribx`](https://github.com/GetThePointGit/rgs-ribx). For development it is wired in via
 `drainworks_plugin/external/rgs_ribx` (a symlink to `../../rgs-ribx/src/rgs_ribx`); for a
-published ZIP it must be **vendored** (a real copy) — see the publishing doc.
+published ZIP it must be **vendored** (a real copy) — see
+[Building & publishing](#building--publishing).
 
 ---
 
@@ -104,11 +105,75 @@ manual QGIS pass.
 
 ---
 
+## Building & publishing
+
+### Build the plugin ZIP
+
+A QGIS plugin ZIP has a single top-level `drainworks_plugin/` directory containing
+`metadata.txt` and `__init__.py`. Two things matter:
+
+1. **`rgs_ribx` must be vendored.** In development `drainworks_plugin/external/rgs_ribx` is a
+   *symlink* to `../../rgs-ribx/src/rgs_ribx`; the ZIP needs a **real copy** (a symlink does
+   not work on the user's machine).
+2. **Excluded:** `__pycache__/`, `*.pyc`, `.DS_Store`, and the dev `rgs_ribx` symlink.
+
+Use the bundled script (it reads the version from `metadata.txt`):
+
+```bash
+./scripts/build_plugin_zip.sh
+# -> dist/drainworks-<version>.zip
+```
+
+It copies `drainworks_plugin/` to a temp dir, replaces the `rgs_ribx` symlink with a real
+copy from `../rgs-ribx/src/rgs_ribx`, strips `__pycache__`, and zips it. The vendored
+`pyqtgraph` under `external/` (with its `LICENSE.txt`) is kept; the working tree is left
+unchanged. Verify the ZIP has real files under `external/rgs_ribx/` (not a symlink) and
+`metadata.txt` at the top of the plugin directory.
+
+### Publish to plugins.qgis.org
+
+The official repository is **https://plugins.qgis.org**.
+
+**One-time:**
+
+1. Create an **OSGEO account** (used to log in to plugins.qgis.org).
+2. Check `drainworks_plugin/metadata.txt`: `name`, `version`, `qgisMinimumVersion`,
+   `description`, `about`, `author`, `email`, `repository`, `tracker`, `tags`, `icon`,
+   `experimental`. Bump `version` for every upload (e.g. `1.0.4` → `1.0.5`) and add a
+   `changelog=` entry.
+
+**Upload:**
+
+1. Log in to **https://plugins.qgis.org** → **Share a plugin / Upload**.
+2. Upload the ZIP. The site validates `metadata.txt` and the directory structure.
+3. The **first** upload needs admin approval; after that you can upload new versions
+   yourself. Users get updates via **Plugins → Upgradeable**.
+4. `experimental=True` hides the plugin behind QGIS's "Show also experimental plugins"; a
+   public release keeps `experimental=False`.
+
+**Approval notes:** no network traffic or heavy imports on load; no `print()` debug output
+(use the QGIS message bar); a valid `LICENSE` and clear `about`/`description`; bundled
+third-party code (`external/pyqtgraph`, `external/rgs_ribx`) is fine as long as the licences
+are compatible (MIT here).
+
+**Internal-only alternative:** serve the ZIP via your own `plugins.xml` on a web server and
+add that URL under **Plugins → Settings → Plugin Repositories** — no approval, but you host
+it yourself.
+
+### Build the user manual (PDF)
+
+See **[docs/manual/README.md](docs/manual/README.md)** for the `pandoc` + `tectonic` command
+that renders the manual to
+**[docs/manual/drainworks-handleiding.pdf](docs/manual/drainworks-handleiding.pdf)**.
+
+---
+
 ## Documentation
 
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md).
-- **User manual:** [docs/manual/](docs/manual/) — markdown documents convertible to PDF,
-  with marked screenshot positions.
+- **User manual:** [docs/manual/](docs/manual/) (markdown, with embedded screenshots) →
+  rendered **[drainworks-handleiding.pdf](docs/manual/drainworks-handleiding.pdf)**. Build
+  instructions in [docs/manual/README.md](docs/manual/README.md).
 - **Design history:** [docs/superpowers/specs](docs/superpowers/specs) and
   [docs/superpowers/plans](docs/superpowers/plans) — one spec + plan per increment.
 

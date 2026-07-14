@@ -4,8 +4,9 @@ Drainworks is een QGIS-plug-in om Nederlandse riool-inspectiegegevens te importe
 verrijken, de **verloren berging** te berekenen en een traject door het netwerk te bekijken
 in een **langsdoorsnede** (zijaanzicht).
 
-> 📷 **Screenshot:** *QGIS met het Drainworks-paneel onderaan, een geïmporteerd netwerk op
-> de kaart en een langsprofiel rechts.* `screenshots/00-overzicht.png`
+![](screenshots/00-overzicht.png)
+
+*QGIS met het Drainworks-paneel onderaan, een geïmporteerd netwerk op de kaart en een langsprofiel rechts.*
 
 ## Het paneel
 
@@ -37,8 +38,9 @@ elke stap los opnieuw gedraaid kan worden.
 Elke stap draait op de achtergrond (de kaart blijft bruikbaar) en toont een voortgangsbalk
 bovenin het scherm.
 
-> 📷 **Screenshot:** *de twee inklapbare stapkaders "1. Basisdata verrijken" en
-> "2. Verloren berging" met hun knoppen en actueel-indicatie.* `screenshots/00-stapkaders.png`
+![](screenshots/00-stapkaders.png){width=5.8cm}
+
+*De twee inklapbare stapkaders "1. Basisdata verrijken" en "2. Verloren berging" met hun knoppen en actueel-indicatie.*
 
 ## Actueel of verouderd
 
