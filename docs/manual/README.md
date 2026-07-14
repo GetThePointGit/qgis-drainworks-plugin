@@ -23,8 +23,12 @@ pandoc metadata.yaml \
        00-overzicht.md 01-importeren.md 02-verrijken.md 03-verloren-berging.md \
        04-traject-en-zijaanzicht.md 05-opmaak.md 06-installatie-en-publicatie.md \
        --pdf-engine=tectonic --resource-path=. --include-in-header=preamble.tex \
+       --lua-filter=figure-block.lua \
        -o drainworks-handleiding.pdf
 ```
+
+`figure-block.lua` houdt elk figuur samen met zijn caption op één pagina (in een
+`samepagefig`-minipage uit `preamble.tex`) en zet er witruimte omheen.
 
 `metadata.yaml` levert de **titelpagina** (titel, ondertitel, auteur, versie), de
 inhoudsopgave, genummerde secties en de marges — pas titel/auteur/versie daar aan.
@@ -35,10 +39,11 @@ bestand en niet in `metadata.yaml`: pandoc verwerkt `header-includes` als Markdo
 escapet dan de `[..]`-font-opties. De fonts worden met `Renderer=OpenType` geladen omdat
 tectonic's HarfBuzz-renderer op deze OTF's crasht.
 
-Wil je een omslagafbeelding, plaats dan `screenshots/00-omslag.png` en haal de
-`\titlegraphic`-regel in `preamble.tex` uit commentaar. Met `xelatex` i.p.v. `tectonic`
-kan `Renderer=OpenType` meestal weg (systeemfonts vereisen dan wel dat Fira Sans/Mono
-geïnstalleerd is).
+De **omslagafbeelding** op de titelpagina komt uit `screenshots/00-omslag.png` (ingesteld
+via `titling` in `preamble.tex`). Wil je een andere omslag, vervang dat bestand; wil je geen
+omslag, haal het `\pretitle`/`\posttitle`-blok uit `preamble.tex`. Met `xelatex` i.p.v.
+`tectonic` kan `Renderer=OpenType` meestal weg (systeemfonts vereisen dan wel dat Fira
+Sans/Mono geïnstalleerd is).
 
 Alternatief (HTML → print naar PDF in de browser):
 

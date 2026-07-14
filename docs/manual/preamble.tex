@@ -4,6 +4,18 @@
 
 \usepackage{graphicx}
 
+% Elk figuur + caption als één ondeelbaar blok, met witruimte eromheen (zie
+% figure-block.lua, dat de figuren in deze omgeving wikkelt). Een minipage
+% breekt nooit over een paginagrens, dus de figuur blijft bij zijn caption.
+\newenvironment{samepagefig}
+  {\par\addvspace{\bigskipamount}\noindent\begin{minipage}{\linewidth}\centering}
+  {\end{minipage}\par\addvspace{\bigskipamount}}
+
+% Omslagafbeelding boven de titel op de titelpagina.
+\usepackage{titling}
+\pretitle{\begin{center}\includegraphics[width=0.55\textwidth]{screenshots/00-omslag.png}\\[1.5em]\LARGE\bfseries}
+\posttitle{\par\end{center}\vskip 0.5em}
+
 % Strak schreefloos lettertype (Fira Sans + Fira Mono) i.p.v. het standaard
 % Latin Modern. De fonts komen uit tectonic's eigen bundel (laden op
 % bestandsnaam). Renderer=OpenType is nodig omdat tectonic's HarfBuzz-renderer
@@ -24,7 +36,3 @@
 \newunicodechar{⚠}{{\fawarnfont\symbol{"F071}}}
 \newunicodechar{↶}{\ensuremath{\curvearrowleft}}
 \newunicodechar{↷}{\ensuremath{\curvearrowright}}
-
-% Optionele omslagafbeelding op de titelpagina: plaats screenshots/00-omslag.png
-% en haal de onderstaande regel uit commentaar.
-% \titlegraphic{\includegraphics[width=0.6\textwidth]{screenshots/00-omslag.png}}
