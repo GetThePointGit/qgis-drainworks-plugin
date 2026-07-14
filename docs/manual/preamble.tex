@@ -16,6 +16,17 @@
 \definecolor{figbordercolor}{gray}{0.8}
 \newcommand{\figframe}[1]{{\setlength{\fboxsep}{2pt}\setlength{\fboxrule}{0.4pt}\fcolorbox{figbordercolor}{white}{#1}}}
 
+% Blockquote-notities links uitlijnen (volle breedte) met een dun grijs
+% streepje links, i.p.v. de standaard symmetrische inspringing die als
+% "gecentreerd" oogt.
+\usepackage{framed}
+\colorlet{quotebarcolor}{gray!45}
+\renewenvironment{quote}
+  {\par\addvspace{\medskipamount}%
+   \def\FrameCommand{{\color{quotebarcolor}\vrule width 2pt}\hspace{8pt}}%
+   \MakeFramed{\advance\hsize-\width\FrameRestore}\noindent\ignorespaces}
+  {\par\endMakeFramed\addvspace{\medskipamount}}
+
 % Elk figuur + caption als één ondeelbaar blok, met witruimte eromheen (zie
 % figure-block.lua, dat de figuren in deze omgeving wikkelt). Een minipage
 % breekt nooit over een paginagrens, dus de figuur blijft bij zijn caption.
