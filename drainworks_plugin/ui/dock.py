@@ -464,9 +464,40 @@ class DrainworksDock(QDockWidget):
         self.plugin.on_import()
 
     def _on_base_edited(self):
-        """Layer edits committed: mark enrich/berging stale."""
+        """Layer edits committed: mark enrich/berging stale + refresh the side-view.
+
+        Without the reload the side-view keeps drawing the BOBs/maaiveld that were
+        read at open time, so hand-corrected values (e.g. 0.00-placeholder BOBs)
+        seem to have no effect until the GeoPackage is reopened.
+        """
         self.state.mark_base_edited()
+        self._reload_base_data()
+        self._rebuild()
         self._refresh_step_buttons()
+
+    def _reload_base_data(self):
+        """Re-read pipes/putten (+ profile/segments) from the gpkg — no GUI work.
+
+        ``set_data`` only runs when the GeoPackage is opened; this refreshes the
+        in-memory copies the side-view draws from (``pipes_by_code`` feeds the
+        ankers + "BOB leiding (recht)", ``_manholes_by_code`` the maaiveldlijn).
+        """
+        if not self.gpkg_path:
+            return
+        from drainworks_plugin.io.geopackage_store import (
+            read_manhole_points,
+            read_manholes,
+            read_pipes,
+        )
+        from drainworks_plugin.trajectory.network import SewerNetwork
+
+        pipes = read_pipes(self.gpkg_path)
+        self.pipes_by_code = {p.code: p for p in pipes}
+        self.network = SewerNetwork(pipes)
+        self.manhole_points = read_manhole_points(self.gpkg_path)
+        self._manholes_by_code = {m.code: m for m in read_manholes(self.gpkg_path)}
+        self.measurements_by_pipe = self._read_profile_for_sideview()
+        self._segments_by_pipe = self._read_segments_by_pipe()
 
     def _read_profile_for_sideview(self):
         """Read the profile layer into {code: [dict(dist,bob,obb,flooded_pct,water_level)]}."""
@@ -538,8 +569,10 @@ class DrainworksDock(QDockWidget):
             f"{s.get('n_segments', 0)} segmenten · {s.get('n_errors', 0)} fouten · "
             f"{s.get('n_warnings', 0)} waarschuwingen")
         self.plugin.reload_pipeline_layers()
-        self._reload_profile()
-        self._segments_by_pipe = self._read_segments_by_pipe()
+        # Enrich rewrites profile/segments *and* derived pipe fields; re-read all
+        # in-memory base data so the side-view draws the current state.
+        self._reload_base_data()
+        self._rebuild()
         self._refresh_step_buttons()
         self.active_task = None
         self.iface.messageBar().pushSuccess(

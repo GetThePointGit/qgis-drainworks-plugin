@@ -5,6 +5,7 @@ from drainworks_plugin.io.geopackage_store import (
 )
 from drainworks_plugin.pipeline.enrich import enrich
 
+import pytest
 import rgs_ribx
 
 
@@ -43,6 +44,30 @@ def test_enrich_rerun_reflects_edited_bob(fixtures_dir, tmp_gpkg):
     enrich(tmp_gpkg, correct_bob=True)
     second_end = read_profile(tmp_gpkg)["L001"][-1].bob
     assert round(second_end - first_end, 2) == -1.0
+
+
+def test_enrich_rerun_recomputes_bob_avg_and_slope(fixtures_dir, tmp_gpkg):
+    res = rgs_ribx.build_from_ribx(fixtures_dir / "inclined.ribx")
+    write_base(tmp_gpkg, res.manholes, res.pipes, res.raw_measurements)
+    enrich(tmp_gpkg, correct_bob=True)
+
+    from osgeo import ogr
+    ds = ogr.Open(str(tmp_gpkg), update=1)
+    layer = ds.GetLayerByName("pipes")
+    feat = layer.GetNextFeature()
+    bob1 = feat.GetField("bob1")
+    bob2 = feat.GetField("bob2") - 1.0
+    length = feat.GetField("length")
+    feat.SetField("bob2", bob2)
+    layer.SetFeature(feat)
+    ds = None
+
+    enrich(tmp_gpkg, correct_bob=True)
+
+    ds = ogr.Open(str(tmp_gpkg))
+    feat = ds.GetLayerByName("pipes").GetNextFeature()
+    assert feat.GetField("bob_avg") == pytest.approx((bob1 + bob2) / 2.0)
+    assert feat.GetField("slope") == pytest.approx(abs(bob1 - bob2) / length)
 
 
 def test_enrich_summary_counts_errors_and_warnings(tmp_gpkg):

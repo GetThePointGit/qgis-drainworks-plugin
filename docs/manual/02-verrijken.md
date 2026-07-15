@@ -54,7 +54,8 @@ doet:
 
 1. **Validatie** — controleert volledigheid (code, BOB, diameter, knooppunten aanwezig) en
    waardes binnen bereik (diameter 50–3000 mm, meetlengte ±20 % van de geometrielengte,
-   hellingshoek). Resultaten komen op de velden `valid`/`issues` van de leidingen/putten.
+   hellingshoek, BOB onder het maaiveld van de aangrenzende put). Resultaten komen op de
+   velden `valid`/`issues` van de leidingen/putten.
 2. **Hoogtes** — zet de hellingmetingen om naar een hoogteprofiel (laag `profile`).
 3. **Segmenten** — voegt gemeten punten samen tot segmenten (laag `segments`); voor
    leidingen zonder meting worden BOB-segmenten gemaakt.
@@ -68,20 +69,44 @@ Onder de knop verschijnt:
 - **Actueel-indicatie** — ✓ *actueel* of ⚠ *verouderd — verrijk opnieuw*.
 - **Samenvatting** — bijv. *1697 segmenten · 3 fouten · 5 waarschuwingen*.
   - **Fouten** = ontbrekende/onbekende data (code, BOB, diameter, knooppunt).
-  - **Waarschuwingen** = waardes buiten bereik (diameter, meetlengte, hellingshoek).
+  - **Waarschuwingen** = waardes buiten bereik (diameter, meetlengte, hellingshoek,
+    BOB op of boven maaiveld).
 
 ![](screenshots/02-resultaat.png){width=5.8cm}
 
 *De stapkaart na verrijken met "✓ actueel" en de samenvatting.*
 
-Verder zijn de resultaten per put/ leiding te bekijken via de tabellen van deze kaartlagen. Hier 
-zijn de kolommen `valid` (0 of 1) en `issues` toegevoegd.
+Verder zijn de resultaten per put/ leiding te bekijken via de tabellen van deze kaartlagen. Hier
+zijn de kolommen `valid` en `issues` toegevoegd:
+
+- **`valid` = 1** — de leiding of put is goed: de validatie vond **geen** problemen.
+- **`valid` = 0** — er is minstens één probleem gevonden; de omschrijving(en) staan in het
+  veld `issues`.
 
 ![](screenshots/02-tabel_resultaat.png){width=13.0cm}
 
 *De validatie gegevens in de tabel.*
 
+## Placeholder-BOB's (0.00) in de bron
+
+Sommige RIBX-exports vullen **0.00** in als een BOB niet is ingemeten. Dat is geen echte
+hoogte: een BOB op 0 m NAP ligt (ver) boven het maaiveld. In het zijaanzicht zie je dan een
+punt boven het maaiveld bij de put en duikt de lijn "BOB gemeten" van daaruit steil naar de
+metingen; de stippellijn "BOB leiding (recht)" wordt op 0 m NAP getekend en lijkt daardoor
+te ontbreken. De validatie markeert deze strengen met de waarschuwing *"BOB … op of boven
+maaiveld"* (`valid` = 0).
+
+Zo los je het op:
+
+1. Zoek de gemelde strengen op (filter op `valid` = 0 of lees `issues`).
+2. Corrigeer `bob1`/`bob2` in de tabel van de laag **Leidingen** met de juiste waardes en
+   sla de bewerking op. De afgeleide velden `bob_avg` en `slope` hoef je niet zelf in te
+   vullen — die worden bij het verrijken opnieuw berekend.
+3. Klik op **Verrijk opnieuw**. Het zijaanzicht gebruikt daarna direct de gecorrigeerde
+   waardes.
+
 ## Opnieuw verrijken
 
 Pas je in QGIS een BOB of leiding aan (en sla de bewerking op), dan springt de knop op
-**Verrijk opnieuw** (⚠ verouderd). Klik nogmaals om de segmenten/profielen te herbouwen.
+**Verrijk opnieuw** (⚠ verouderd) en tekent het zijaanzicht meteen met de aangepaste
+waardes. Klik nogmaals om de segmenten/profielen te herbouwen.

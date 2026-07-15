@@ -3,6 +3,29 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
+## 1.0.5-beta.1 — 2026-07-15
+
+Beta release for the Homeruskwartier customer feedback (placeholder BOBs).
+
+### Fixed
+- **Hand-edited BOBs now reach the side-view immediately.** After saving layer edits and
+  after *Verrijk basisdata* the dock re-reads the pipes/manholes from the GeoPackage;
+  previously the side-view kept drawing the values read at open time until QGIS was
+  restarted (customer report: a point "above maaiveld" at a manhole and a
+  "BOB leiding (recht)" drawn at 0 m NAP that survived manual correction).
+- **`bob_avg` and `slope` are recomputed during enrich** from the current `bob1`/`bob2`,
+  so the thematic map styling follows manual BOB corrections without filling in those
+  derived fields by hand.
+
+### Added
+- **Validation warning "BOB op of boven maaiveld"** (rgs-ribx): RIBX exports sometimes
+  write 0.00 for BOBs that were not measured; such placeholder BOBs used to slip through
+  validation silently and wreck the side-view. They now get `valid = 0` with a clear
+  issue text (the check compares each BOB against the adjacent manhole's ground level).
+- **Manual**: explains the `valid` field (1 = OK, 0 = issue, description in `issues`), a
+  new section on placeholder BOBs (0.00) with a step-by-step correction guide, and the
+  new ground-level check.
+
 ## 1.0.4 — 2026-07-14
 
 ### Changed
