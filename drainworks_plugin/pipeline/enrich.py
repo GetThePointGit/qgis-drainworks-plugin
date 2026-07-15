@@ -21,6 +21,7 @@ from drainworks_plugin.io.geopackage_store import (
     read_manholes,
     read_pipes,
     read_raw_measurements,
+    refresh_pipe_derived,
     set_validation,
     write_meta,
     write_profile,
@@ -155,6 +156,7 @@ def enrich_write(gpkg_path, plan, on_progress=None) -> dict:
 
     _report(0.05, "Validatie wegschrijven…")
     set_validation(gpkg_path, plan["validation"])
+    refresh_pipe_derived(gpkg_path)
     _report(0.20, "Profiel wegschrijven…")
     write_profile(gpkg_path, plan["profile_rows"])
     _report(0.70, "Segmenten wegschrijven…")

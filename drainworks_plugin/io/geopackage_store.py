@@ -472,6 +472,34 @@ def set_validation(path, validation) -> None:
     ds = None
 
 
+def refresh_pipe_derived(path) -> None:
+    """Recompute ``bob_avg``/``slope`` on the pipes layer from bob1/bob2/length.
+
+    ``write_base`` derives these once at import; hand-edited BOBs would otherwise
+    keep stale derived values (they only feed the thematic map styling). NULL when
+    either BOB is missing; slope NULL without a usable length.
+    """
+    ds = ogr.Open(str(path), update=1)
+    layer = ds.GetLayerByName("pipes")
+    fi = _field_index(layer)
+    ds.StartTransaction()
+    layer.ResetReading()
+    for feat in layer:
+        bob1 = _opt_idx(feat, fi.get("bob1"))
+        bob2 = _opt_idx(feat, fi.get("bob2"))
+        length = _opt_idx(feat, fi.get("length"))
+        bob_avg = slope = None
+        if bob1 is not None and bob2 is not None:
+            bob_avg = (bob1 + bob2) / 2.0
+            if length:
+                slope = abs(bob1 - bob2) / length
+        _seti(feat, fi["bob_avg"], bob_avg)
+        _seti(feat, fi["slope"], slope)
+        layer.SetFeature(feat)
+    ds.CommitTransaction()
+    ds = None
+
+
 SEGMENT_BERGING_FIELDS = ["water_level", "flooded_pct", "lost_volume",
                           "flooded_length", "flooded_pct_max", "water_depth_max"]
 

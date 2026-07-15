@@ -3,6 +3,26 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
+## Unreleased
+
+### Fixed
+- **Handmatig gecorrigeerde BOB's werken nu direct door in het zijaanzicht.** Na het
+  opslaan van laag-edits en na *Verrijk basisdata* herlaadt de dock de leidingen/putten
+  uit de GeoPackage; voorheen bleef het zijaanzicht tot een herstart tekenen met de
+  waardes van het openen (klantmelding Homeruskwartier: punt "boven maaiveld" bij een
+  put en een op 0 m NAP getekende "BOB leiding (recht)" die na correctie bleven staan).
+- **`bob_avg` en `slope` worden bij verrijken herberekend** uit de actuele `bob1`/`bob2`,
+  zodat de thematische kaartweergave na handmatige BOB-correcties klopt zonder die
+  afgeleide velden zelf in te vullen.
+
+### Added
+- **Validatiewaarschuwing "BOB op of boven maaiveld"** (rgs-ribx): RIBX-exports vullen
+  soms 0.00 in als een BOB niet is ingemeten; zulke placeholder-BOB's gleden geruisloos
+  door de validatie en tekenden het zijaanzicht kapot. Ze krijgen nu `valid = 0` met een
+  duidelijke issue-tekst.
+- **Handleiding**: uitleg van `valid` (1 = goed, 0 = issue in `issues`), een sectie over
+  placeholder-BOB's (0.00) met stappenplan voor correctie, en de nieuwe maaiveld-check.
+
 ## 1.0.4 — 2026-07-14
 
 ### Changed
