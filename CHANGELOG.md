@@ -3,25 +3,28 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
-## Unreleased
+## 1.0.5-beta.1 — 2026-07-15
+
+Beta release for the Homeruskwartier customer feedback (placeholder BOBs).
 
 ### Fixed
-- **Handmatig gecorrigeerde BOB's werken nu direct door in het zijaanzicht.** Na het
-  opslaan van laag-edits en na *Verrijk basisdata* herlaadt de dock de leidingen/putten
-  uit de GeoPackage; voorheen bleef het zijaanzicht tot een herstart tekenen met de
-  waardes van het openen (klantmelding Homeruskwartier: punt "boven maaiveld" bij een
-  put en een op 0 m NAP getekende "BOB leiding (recht)" die na correctie bleven staan).
-- **`bob_avg` en `slope` worden bij verrijken herberekend** uit de actuele `bob1`/`bob2`,
-  zodat de thematische kaartweergave na handmatige BOB-correcties klopt zonder die
-  afgeleide velden zelf in te vullen.
+- **Hand-edited BOBs now reach the side-view immediately.** After saving layer edits and
+  after *Verrijk basisdata* the dock re-reads the pipes/manholes from the GeoPackage;
+  previously the side-view kept drawing the values read at open time until QGIS was
+  restarted (customer report: a point "above maaiveld" at a manhole and a
+  "BOB leiding (recht)" drawn at 0 m NAP that survived manual correction).
+- **`bob_avg` and `slope` are recomputed during enrich** from the current `bob1`/`bob2`,
+  so the thematic map styling follows manual BOB corrections without filling in those
+  derived fields by hand.
 
 ### Added
-- **Validatiewaarschuwing "BOB op of boven maaiveld"** (rgs-ribx): RIBX-exports vullen
-  soms 0.00 in als een BOB niet is ingemeten; zulke placeholder-BOB's gleden geruisloos
-  door de validatie en tekenden het zijaanzicht kapot. Ze krijgen nu `valid = 0` met een
-  duidelijke issue-tekst.
-- **Handleiding**: uitleg van `valid` (1 = goed, 0 = issue in `issues`), een sectie over
-  placeholder-BOB's (0.00) met stappenplan voor correctie, en de nieuwe maaiveld-check.
+- **Validation warning "BOB op of boven maaiveld"** (rgs-ribx): RIBX exports sometimes
+  write 0.00 for BOBs that were not measured; such placeholder BOBs used to slip through
+  validation silently and wreck the side-view. They now get `valid = 0` with a clear
+  issue text (the check compares each BOB against the adjacent manhole's ground level).
+- **Manual**: explains the `valid` field (1 = OK, 0 = issue, description in `issues`), a
+  new section on placeholder BOBs (0.00) with a step-by-step correction guide, and the
+  new ground-level check.
 
 ## 1.0.4 — 2026-07-14
 
