@@ -8,6 +8,10 @@ All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 Final release of the Homeruskwartier customer feedback (placeholder BOBs); identical to
 1.0.5-beta.1 (2026-07-15), which was confirmed by the customer.
 
+### Changed
+- `metadata.txt` now has `experimental=False`: the plugin no longer hides behind QGIS's
+  "Show also experimental plugins" option.
+
 ### Fixed
 - **Hand-edited BOBs now reach the side-view immediately.** After saving layer edits and
   after *Verrijk basisdata* the dock re-reads the pipes/manholes from the GeoPackage;
