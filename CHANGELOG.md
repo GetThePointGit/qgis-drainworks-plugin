@@ -3,9 +3,14 @@
 All notable changes to the Drainworks QGIS plugin. Versions follow the plugin's
 `metadata.txt` `version`.
 
-## 1.0.5-beta.1 — 2026-07-15
+## 1.0.5 — 2026-09-18
 
-Beta release for the Homeruskwartier customer feedback (placeholder BOBs).
+Final release of the Homeruskwartier customer feedback (placeholder BOBs); identical to
+1.0.5-beta.1 (2026-07-15), which was confirmed by the customer.
+
+### Changed
+- `metadata.txt` now has `experimental=False`: the plugin no longer hides behind QGIS's
+  "Show also experimental plugins" option.
 
 ### Fixed
 - **Hand-edited BOBs now reach the side-view immediately.** After saving layer edits and
